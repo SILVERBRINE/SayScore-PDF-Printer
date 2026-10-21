@@ -107,7 +107,7 @@ def main() -> None:
     downloads = sorted(rows.items())
     if len(downloads) == 1:
         downloads.insert(0, (today - timedelta(days=1), 0))
-    (args.out / "downloads.svg").write_text(chart("설치 파일 다운로드", downloads, "#2f81f7"), encoding="utf-8")
+    (args.out / "downloads.svg").write_text(chart("Installer downloads", downloads, "#2f81f7"), encoding="utf-8")
     stars = cumulative_by_day(star_dates(args.repo), today)
     if len(stars) == 1:
         stars.insert(0, (today - timedelta(days=1), 0))

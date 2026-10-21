@@ -1,5 +1,7 @@
 <div align="center">
 
+**한국어** · [English](README.en.md)
+
 # SayScore PDF
 
 Windows 인쇄 작업을 실제 Windows 프린터 드라이버와 Standard TCP/IP Port로 받아 PDF로 변환합니다.
@@ -11,6 +13,7 @@ Windows 인쇄 작업을 실제 Windows 프린터 드라이버와 Standard TCP/I
 [![최신 버전](https://img.shields.io/github/v/release/SILVERBRINE/SayScore-PDF-Printer?label=%EC%B5%9C%EC%8B%A0%20%EB%B2%84%EC%A0%84)](https://github.com/SILVERBRINE/SayScore-PDF-Printer/releases/latest)
 [![다운로드](https://img.shields.io/github/downloads/SILVERBRINE/SayScore-PDF-Printer/total?label=%EB%8B%A4%EC%9A%B4%EB%A1%9C%EB%93%9C)](https://github.com/SILVERBRINE/SayScore-PDF-Printer/releases)
 [![Stars](https://img.shields.io/github/stars/SILVERBRINE/SayScore-PDF-Printer?style=flat)](https://github.com/SILVERBRINE/SayScore-PDF-Printer/stargazers)
+[![후원하기](https://img.shields.io/badge/%E2%99%A5%20%ED%9B%84%EC%9B%90%ED%95%98%EA%B8%B0-GitHub%20Sponsors-bf3989?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/SILVERBRINE)
 
 </div>
 
@@ -73,6 +76,10 @@ PC에 이미 설치된 다른 프린터나 기본 프린터 설정은 변경하�
 매일 한 번 [stats 워크플로](.github/workflows/stats.yml)가 기록을 갱신합니다. 다운로드 수는 GitHub이 날짜별 기록을 주지 않아 워크플로를 시작한 날부터 쌓입니다.
 
 <img alt="설치 파일 다운로드 추이" src="https://raw.githubusercontent.com/SILVERBRINE/SayScore-PDF-Printer/stats/downloads.svg" width="49%"> <img alt="GitHub Stars 추이" src="https://raw.githubusercontent.com/SILVERBRINE/SayScore-PDF-Printer/stats/stars.svg" width="49%">
+
+## 후원
+
+SayScore PDF는 공익을 위해 무료로 제공됩니다. 개발과 유지에 도움을 주고 싶다면 [GitHub Sponsors](https://github.com/sponsors/SILVERBRINE)로 후원할 수 있습니다. 앱 오른쪽 위의 **♥ 후원하기** 버튼으로도 열 수 있습니다.
 
 ## 라이선스
 

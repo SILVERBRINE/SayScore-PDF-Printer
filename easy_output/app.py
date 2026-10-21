@@ -13,6 +13,7 @@ import subprocess
 import sys
 import threading
 import time
+import webbrowser
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
@@ -25,6 +26,8 @@ from .health import queue_health
 
 PROJECT = Path(__file__).resolve().parent.parent
 SETUP_DRIVER = "Microsoft PCL6 Class Driver"
+PROJECT_URL = "https://github.com/SILVERBRINE/SayScore-PDF-Printer"
+SPONSOR_URL = "https://github.com/sponsors/SILVERBRINE"
 SAMSUNG_DRIVER = "Samsung CLX-9252 9352 Series PCL6 Class Driver"
 X64_DRIVER = "Samsung X4305 Series"
 LOCAL_DRIVERS = ("HP Universal Printing PCL 6", "Microsoft PCL6 Class Driver", "Microsoft PS Class Driver", SAMSUNG_DRIVER)
@@ -354,6 +357,12 @@ class App:
         header.pack(fill="x")
         self._brand_mark(header, px(36)).pack(side="left")
         ttk.Label(header, text="SayScore PDF", font=(FONT, 20, "bold")).pack(side="left", padx=(10, 0))
+        # GitHub Sponsors pink so the free project's donation link is easy to spot.
+        style.configure("Sponsor.TButton", font=(FONT, 10, "bold"), padding=(14, 8), relief="flat",
+                        borderwidth=0, background="#ffeff7", foreground="#bf3989", focuscolor="#ffeff7")
+        style.map("Sponsor.TButton", background=[("active", "#ffd8eb"), ("pressed", "#ffc7e2")])
+        ttk.Button(header, text="♥ 후원하기", style="Sponsor.TButton",
+                   command=lambda: webbrowser.open(SPONSOR_URL)).pack(side="right")
         self.wrap(ttk.Label(box, text="켜 두면, 'SayScore PDF' 프린터로 인쇄한 문서가 자동으로 PDF로 저장됩니다.",
                             style="Muted.TLabel", font=(FONT, 11))).pack(fill="x", pady=(10, 16))
 
@@ -425,6 +434,9 @@ class App:
         menu.add_separator()
         menu.add_command(label="사이트 오류 안내", command=self.site_help)
         menu.add_command(label="진단 내보내기", command=self.export_diagnostics)
+        menu.add_separator()
+        menu.add_command(label="프로젝트 페이지 (GitHub)", command=lambda: webbrowser.open(PROJECT_URL))
+        menu.add_command(label="후원하기 (GitHub Sponsors)", command=lambda: webbrowser.open(SPONSOR_URL))
         more["menu"] = menu
         more.pack(side="right")
         self.wrap(ttk.Label(box, textvariable=self.detail, style="Muted.TLabel")).pack(
