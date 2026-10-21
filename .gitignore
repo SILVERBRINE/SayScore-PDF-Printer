@@ -1,0 +1,28 @@
+__pycache__/
+*.pyc
+data/
+vendor/
+analysis/
+
+# Runtime output can contain print contents, IP addresses, printer and PC details.
+*.pdf
+*.prn
+*.pcl
+*.ps
+*.log
+diagnostics/
+windows-print-*.json
+relay-runtime.json
+runtime-status.json
+
+# Release bundles and local environment
+dist/
+build/
+*.zip
+*.tar
+.venv/
+.env
+.env.*
+.vscode/
+.idea/
+.claude/

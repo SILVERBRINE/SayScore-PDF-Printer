@@ -1,0 +1,1101 @@
+from __future__ import annotations
+
+import argparse
+import atexit
+import hashlib
+import ipaddress
+import json
+import os
+from pathlib import Path
+import queue
+import socket
+import subprocess
+import sys
+import threading
+import time
+import tkinter as tk
+from tkinter import filedialog, messagebox, ttk
+
+from .core import Engine
+from .diagnostics import (address_change_notice, choose_endpoint, find_converter,
+                          owned_queues, printer_inventory, OWNER_COMMENT, QUEUE_NAME,
+                          SITE_REGISTRATION_HELP)
+from .network import local_ipv4_addresses
+from .health import queue_health
+
+PROJECT = Path(__file__).resolve().parent.parent
+SETUP_DRIVER = "Microsoft PCL6 Class Driver"
+SAMSUNG_DRIVER = "Samsung CLX-9252 9352 Series PCL6 Class Driver"
+X64_DRIVER = "Samsung X4305 Series"
+LOCAL_DRIVERS = ("HP Universal Printing PCL 6", "Microsoft PCL6 Class Driver", "Microsoft PS Class Driver", SAMSUNG_DRIVER)
+LABELS = {"queued": "대기", "receiving": "수신 중", "processing": "변환 중",
+          "completed": "✔ 저장됨", "failed": "⚠ 확인 필요"}
+FONT = "Malgun Gothic"
+FONT_CANDIDATES = ("Malgun Gothic", "맑은 고딕", "Segoe UI", "Arial")
+BG, CARD, INK, MUTED = "#f3f2fb", "#ffffff", "#1d2140", "#5b607a"
+ACCENT, ACCENT_DARK, ACCENT_SOFT, ACCENT_INK = "#6d4aff", "#5a3ae0", "#f1edff", "#4b2bc6"
+GOOD, WAIT, BAD = "#1a9c86", "#b7791f", "#d64562"
+MINT, LINE, FOCUS = "#72d9c5", "#e7e4f4", "#c5baff"
+NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+
+
+def choose_font(root) -> str:
+    try:
+        import tkinter.font as tkfont
+        available = set(tkfont.families(root))
+    except Exception:
+        return FONT
+    for family in FONT_CANDIDATES:
+        if family in available:
+            return family
+    return FONT
+DEFAULT_RECEIVE_RATE = 256 * 1024
+MAX_RECEIVE_RATE = 64 * 1024 * 1024
+RELAY_CAPTURE_RAW_PORT = 19100
+RELAY_CAPTURE_SNMP_PORT = 1161
+
+def clean_queue_name(value) -> str | None:
+    if not isinstance(value, str):
+        return None
+    name = value.strip()
+    if not name or len(name) > 220 or any(ch in name for ch in "!,\\/"):
+        return None
+    return name
+
+def clean_receive_rate(value, default: int) -> int:
+    try:
+        rate = int(value)
+    except (TypeError, ValueError):
+        return default
+    if rate <= 0:
+        return 0
+    return min(rate, MAX_RECEIVE_RATE)
+
+def relay_route(data: Path, addresses: list[str]) -> tuple[str, str]:
+    """Return the local capture address and separate printer-facing relay."""
+    try:
+        state = json.loads((data / "relay-runtime.json").read_text(encoding="utf-8"))
+        capture = str(state.get("capture_address") or "")
+        relay = str(state.get("relay_address") or "")
+        capture_ip = ipaddress.ip_address(capture)
+        relay_ip = ipaddress.ip_address(relay)
+        if (capture not in addresses or capture_ip.version != 4 or not capture_ip.is_private
+                or relay_ip.version != 4 or not relay_ip.is_private or relay_ip.is_loopback
+                or relay in addresses or relay == capture):
+            return "", ""
+        return capture, relay
+    except (OSError, ValueError, TypeError, AttributeError):
+        return "", ""
+
+def snmp_identity_from_config(config: dict, inventory: dict | None = None) -> dict:
+    name = config.get("queue_name") or QUEUE_NAME
+    driver = (owned_queue_driver(inventory) if inventory else None) or name
+    serial_seed = f"{socket.gethostname()}|{driver}".encode("utf-8", "replace")
+    identity = {"descr": f"SayScore PDF; compatible driver: {driver}", "name": name,
+                "manufacturer": "SayScore", "model": "SayScore PDF",
+                "serial": "SS" + hashlib.sha256(serial_seed).hexdigest()[:14].upper()}
+    if "samsung" in driver.lower():
+        if "x4305" in driver.lower():
+            # These two x64 Type-3 driver queries are named MDL and
+            # Printer serialNo in itdrvn.dll.  Values identify SayScore
+            # honestly; the Samsung enterprise and model identity are not
+            # claimed.  The adjacent EXT value remains unknown.
+            identity["vendor_oids"] = {
+                "1.3.6.1.4.1.236.11.5.1.1.1.26.0": identity["model"],
+                "1.3.6.1.4.1.236.11.5.1.1.1.4.0": identity["serial"],
+            }
+        elif "9252" in driver or "9352" in driver:
+            # ARM64 uses the Type-4 Bidi schema in saactcpip.xml rather than
+            # the x64 Type-3 SNMP DLL.  Scalar instances use the SNMP .0
+            # suffix; values mirror the explicit schema and its ready state.
+            host = str(config.get("host") or "")
+            identity["vendor_oids"] = {
+                "1.3.6.1.4.1.236.11.5.1.12.2.5.0": host,
+                "1.3.6.1.4.1.236.11.5.11.53.51.11.2.1.0": host,
+                "1.3.6.1.4.1.236.11.5.11.53.51.11.2.2.0": "",
+                "1.3.6.1.4.1.236.11.5.11.53.31.1.116.0": "00010001",
+            }
+        else:
+            identity["model"] = driver
+    return identity
+
+def open_path(path: Path):
+    if sys.platform == "win32":
+        os.startfile(str(path))
+    elif sys.platform == "darwin":
+        subprocess.Popen(["open", str(path)])
+    else:
+        subprocess.Popen(["xdg-open", str(path)])
+
+def owned_queue(inventory: dict) -> dict | None:
+    matches = owned_queues(inventory)
+    return matches[0] if len(matches) == 1 else None
+
+def owned_queue_driver(inventory: dict) -> str | None:
+    queue = owned_queue(inventory)
+    return queue.get("driver") if queue else None
+
+def owned_queue_name(inventory: dict) -> str | None:
+    queue = owned_queue(inventory)
+    return queue.get("name") if queue else None
+
+def setup_driver(inventory: dict) -> str:
+    if owned_queue_driver(inventory) == SAMSUNG_DRIVER:
+        return SAMSUNG_DRIVER
+    return SETUP_DRIVER
+
+def samsung_x64_registered() -> bool:
+    if sys.platform != "win32":
+        return False
+    import winreg
+    key = (r"SYSTEM\CurrentControlSet\Control\Print\Environments\Windows x64"
+           r"\Drivers\Version-3" + "\\" + X64_DRIVER)
+    try:
+        winreg.CloseKey(winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, key))
+        return True
+    except OSError:
+        return False
+
+BUNDLED_DRIVERS = {"AMD64": PROJECT / "vendor" / "drivers" / "samsung-x4305-x64" / "us015.inf",
+                   "ARM64": PROJECT / "vendor" / "drivers" / "samsung-woa-arm64" / "prnsacl1.inf"}
+
+def bundled_samsung(native_arch: str) -> bool:
+    path = BUNDLED_DRIVERS.get(native_arch)
+    return bool(path and path.is_file())
+
+def setup_choice(inventory: dict, native_arch: str, samsung_x64: bool | None = None,
+                 bundled: bool | None = None) -> tuple[str, str]:
+    owned = owned_queue_driver(inventory)
+    if bundled is None:
+        bundled = bundled_samsung(native_arch)
+    if native_arch == "AMD64":
+        if samsung_x64 is None:
+            samsung_x64 = samsung_x64_registered()
+        if owned == X64_DRIVER or (owned is None and (samsung_x64 or bundled)):
+            return "Install-X64Printer.ps1", X64_DRIVER
+        return "Install-LocalPrinter.ps1", owned if owned in LOCAL_DRIVERS and owned != SAMSUNG_DRIVER else SETUP_DRIVER
+    if bundled and (owned is None or owned in LOCAL_DRIVERS):
+        return "Install-LocalPrinter.ps1", SAMSUNG_DRIVER
+    return "Install-LocalPrinter.ps1", setup_driver(inventory)
+
+def native_windows_arch() -> str:
+    import ctypes
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel.GetCurrentProcess.restype = ctypes.c_void_p
+    kernel.IsWow64Process2.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_ushort), ctypes.POINTER(ctypes.c_ushort)]
+    kernel.IsWow64Process2.restype = ctypes.c_int
+    process_machine, native_machine = ctypes.c_ushort(), ctypes.c_ushort()
+    if not kernel.IsWow64Process2(kernel.GetCurrentProcess(), ctypes.byref(process_machine), ctypes.byref(native_machine)):
+        raise OSError(ctypes.get_last_error(), "실제 Windows 아키텍처를 확인하지 못했습니다.")
+    architecture = native_machine.value
+    if architecture == 0x8664:
+        return "AMD64"
+    if architecture == 0xaa64:
+        return "ARM64"
+    raise ValueError(f"지원되지 않는 실제 Windows 아키텍처입니다: {architecture}")
+
+class App:
+    def __init__(self, root: tk.Tk, data: Path, smoke: bool = False):
+        self.root, self.data = root, data.resolve()
+        self.data.mkdir(parents=True, exist_ok=True)
+        self.events = queue.Queue()
+        self.engine = None
+        self.pending_setup = None
+        self.auto_setup_asked = False
+        self.converter_pending = False
+        self.converter_error = ""
+        self.queue_health = {"state": "unknown", "detail": "조회 대기"}
+        self.health_pending = False
+        self.health_requested = 0.0
+        self.route_ready = False
+        self.jobs = {}
+        previous = sorted((self.data / "jobs").glob("*/metadata.json"),
+                          key=lambda p: p.stat().st_mtime)[-100:]
+        for metadata in previous:
+            try:
+                job = json.loads(metadata.read_text(encoding="utf-8"))
+                job["_history"] = True
+                self.events.put(job)
+            except (OSError, ValueError):
+                pass
+        self.inventory = printer_inventory()
+        self.connection_warning = ""
+        try:
+            self.addresses = local_ipv4_addresses()
+        except OSError as exc:
+            self.addresses = []
+            self.connection_warning = f"이 PC의 IPv4 주소를 확인하지 못했습니다: {exc}"
+        relay_capture, self.relay_address = relay_route(self.data, self.addresses)
+        if relay_capture:
+            self.addresses = [relay_capture] + [item for item in self.addresses if item != relay_capture]
+        printer_addresses = [self.relay_address] if self.relay_address else None
+        host, port, printer = choose_endpoint(self.inventory, self.addresses, printer_addresses)
+        listener_port = RELAY_CAPTURE_RAW_PORT if relay_capture else port
+        self.address_change_notice = address_change_notice(self.inventory, self.addresses, printer_addresses)
+        self.config = {"host": host, "port": listener_port,
+                       "printer_host": self.relay_address or host,
+                       "ghostpcl": find_converter("pcl", PROJECT) or find_converter("pcl", self.data),
+                       "ghostscript": find_converter("ps", PROJECT),
+                       "queue_name": owned_queue_name(self.inventory) or QUEUE_NAME,
+                       "receive_rate": DEFAULT_RECEIVE_RATE, "snmp_enabled": True}
+        try:
+            saved = json.loads((self.data / "settings.json").read_text(encoding="utf-8"))
+            if not isinstance(saved, dict):
+                raise ValueError("설정은 JSON 객체여야 합니다.")
+            self.config.update({k: saved[k] for k in ("ghostpcl", "ghostscript")
+                                if saved.get(k) and Path(saved[k]).is_file()})
+            self.config["queue_name"] = clean_queue_name(saved.get("queue_name")) or self.config["queue_name"]
+            self.config["receive_rate"] = clean_receive_rate(saved.get("receive_rate"), DEFAULT_RECEIVE_RATE)
+            self.config["snmp_enabled"] = bool(saved.get("snmp_enabled", True))
+            expected_saved_port = RELAY_CAPTURE_RAW_PORT if relay_capture else 9100
+            if saved.get("host") in self.addresses and int(saved.get("port", 0)) == expected_saved_port:
+                if not printer:
+                    self.config.update(host=saved["host"], port=expected_saved_port)
+            elif "host" in saved:
+                backup = self.data / f"settings.previous-{time.time_ns()}.json"
+                (self.data / "settings.json").replace(backup)
+                self.connection_warning = "이전 루프백/미할당 주소 또는 비표준 포트 설정을 보관하고 해제했습니다. 프린터 연결을 다시 준비하세요."
+        except (OSError, ValueError, TypeError):
+            pass
+        if self.address_change_notice:
+            self.connection_warning = self.address_change_notice
+        self.build_ui()
+        self.refresh_route()
+        root.protocol("WM_DELETE_WINDOW", self.close)
+        atexit.register(self._atexit_cleanup)
+        for variable in (self.status, self.phase, self.route):
+            variable.trace_add("write", self.write_runtime_status)
+        self.write_runtime_status()
+        root.after(100, self.consume)
+        if smoke:
+            root.after(500, self.close)
+        else:
+            root.after(150, self.start)
+            root.after(250, self.request_health)
+            root.after(400, self.prepare_converter)
+            root.after(900, self.auto_setup)
+            root.after(5000, self.check_network)
+
+    def build_ui(self):
+        root = self.root
+        root.title("SayScore PDF")
+        scale = max(1.0, root.winfo_fpixels("1i") / 96)
+        px = lambda value: int(value * scale)
+        width = min(px(780), int(root.winfo_screenwidth() * 0.92))
+        height = min(px(640), int(root.winfo_screenheight() * 0.88))
+        root.geometry(f"{width}x{height}")
+        root.minsize(min(px(600), width), min(px(500), height))
+        root.configure(bg=BG)
+        global FONT
+        FONT = choose_font(root)
+        style = ttk.Style(root)
+        style.theme_use("clam")
+        style.configure(".", background=BG, foreground=INK, font=(FONT, 10))
+        style.configure("TFrame", background=BG)
+        style.configure("Card.TFrame", background=CARD)
+        style.configure("TLabel", background=BG, foreground=INK, font=(FONT, 10))
+        style.configure("Card.TLabel", background=CARD, foreground=INK, font=(FONT, 10))
+        style.configure("Muted.TLabel", background=BG, foreground=MUTED, font=(FONT, 9))
+        style.configure("CardMuted.TLabel", background=CARD, foreground=MUTED, font=(FONT, 10))
+        style.configure("Eyebrow.TLabel", background=CARD, foreground=ACCENT_INK, font=(FONT, 9, "bold"))
+        style.configure("TButton", font=(FONT, 10), padding=(14, 9), relief="flat", borderwidth=0,
+                        background=ACCENT_SOFT, foreground=ACCENT_INK, focuscolor=ACCENT_SOFT)
+        style.map("TButton", background=[("active", "#e6ddff"), ("pressed", "#ddd0ff")])
+        style.configure("Primary.TButton", font=(FONT, 12, "bold"), padding=(22, 13), relief="flat",
+                        borderwidth=0, foreground="#ffffff", background=ACCENT, focuscolor=ACCENT)
+        style.map("Primary.TButton",
+                  background=[("active", ACCENT_DARK), ("pressed", ACCENT_DARK), ("disabled", "#ccc5ee")],
+                  foreground=[("disabled", "#f4f1ff")])
+        style.configure("TMenubutton", font=(FONT, 10), padding=(14, 9), relief="flat", borderwidth=0,
+                        background=ACCENT_SOFT, foreground=ACCENT_INK, arrowcolor=ACCENT_INK)
+        style.map("TMenubutton", background=[("active", "#e6ddff")])
+        style.configure("Treeview", rowheight=px(34), font=(FONT, 10), background=CARD,
+                        fieldbackground=CARD, foreground=INK, borderwidth=0)
+        style.map("Treeview", background=[("selected", ACCENT_SOFT)], foreground=[("selected", ACCENT_INK)])
+        style.configure("Treeview.Heading", font=(FONT, 9, "bold"), padding=8,
+                        background=BG, foreground=MUTED, relief="flat")
+        style.configure("TCheckbutton", background=BG, foreground=INK, font=(FONT, 10), focuscolor=BG)
+        style.map("TCheckbutton", background=[("active", BG)])
+        style.configure("Vertical.TScrollbar", background=BG, troughcolor=BG, borderwidth=0, arrowcolor=MUTED)
+
+        box = ttk.Frame(root, padding=(28, 24))
+        box.pack(fill="both", expand=True)
+        header = ttk.Frame(box)
+        header.pack(fill="x")
+        self._brand_mark(header, px(36)).pack(side="left")
+        ttk.Label(header, text="SayScore PDF", font=(FONT, 20, "bold")).pack(side="left", padx=(10, 0))
+        self.wrap(ttk.Label(box, text="켜 두면, 'SayScore PDF' 프린터로 인쇄한 문서가 자동으로 PDF로 저장됩니다.",
+                            style="Muted.TLabel", font=(FONT, 11))).pack(fill="x", pady=(10, 16))
+
+        card = tk.Frame(box, bg=CARD, highlightbackground=LINE, highlightcolor=LINE, highlightthickness=1, bd=0)
+        card.pack(fill="x")
+        cardpad = ttk.Frame(card, style="Card.TFrame", padding=(24, 20))
+        cardpad.pack(fill="x")
+        ttk.Label(cardpad, text="자동 PDF 프린터", style="Eyebrow.TLabel").pack(anchor="w")
+        self.phase = tk.StringVar(value="준비 중…")
+        self.headline = tk.Label(cardpad, textvariable=self.phase, font=(FONT, 16, "bold"),
+                                 bg=CARD, fg=INK, anchor="w", justify="left")
+        self.wrap(self.headline).pack(fill="x", pady=(5, 0))
+        checks = ttk.Frame(cardpad, style="Card.TFrame")
+        checks.pack(fill="x", pady=(16, 18))
+        self.check_rows = {}
+        for key, title in (("converter", "PDF 변환기"), ("printer", "SayScore PDF 프린터"), ("receiver", "인쇄 받기")):
+            row = ttk.Frame(checks, style="Card.TFrame")
+            row.pack(fill="x", pady=3)
+            dot = tk.Label(row, text="●", font=(FONT, 11), bg=CARD, fg=WAIT, width=2)
+            dot.pack(side="left")
+            ttk.Label(row, text=title, style="Card.TLabel", width=18, font=(FONT, 10, "bold")).pack(side="left")
+            text = tk.StringVar(value="확인 중…")
+            self.wrap(ttk.Label(row, textvariable=text, style="CardMuted.TLabel")).pack(side="left", fill="x", expand=True)
+            self.check_rows[key] = (dot, text)
+        self.primary = ttk.Button(cardpad, text="PDF 폴더 열기", style="Primary.TButton", command=self.primary_action)
+        self.primary.pack(anchor="w")
+
+        self.status = tk.StringVar(value=self.address_change_notice or "시작 중…")
+        self.route = tk.StringVar(value="")
+        self.health_label = tk.StringVar(value="Windows 프린터 상태: 조회 대기")
+        self.wrap(ttk.Label(box, textvariable=self.status, style="Muted.TLabel")).pack(fill="x", pady=(8, 0))
+
+        head = ttk.Frame(box)
+        head.pack(fill="x", pady=(14, 6))
+        ttk.Label(head, text="최근 PDF", font=(FONT, 12, "bold")).pack(side="left")
+        ttk.Label(head, text="  두 번 클릭하면 열립니다", style="Muted.TLabel").pack(side="left")
+        table = ttk.Frame(box)
+        table.pack(fill="both", expand=True)
+        self.tree = ttk.Treeview(table, columns=("time", "state", "file", "detail"), show="headings",
+                                 selectmode="browse", height=4)
+        for key, title, width, stretch in (("time", "시간", 110, False), ("state", "상태", 90, False),
+                                           ("file", "파일", 220, True), ("detail", "내용", 300, True)):
+            self.tree.heading(key, text=title)
+            self.tree.column(key, width=px(width), stretch=stretch)
+        scroll = ttk.Scrollbar(table, orient="vertical", command=self.tree.yview)
+        self.tree.configure(yscrollcommand=scroll.set)
+        self.tree.pack(side="left", fill="both", expand=True)
+        scroll.pack(side="right", fill="y")
+        self.tree.bind("<<TreeviewSelect>>", self.selected)
+        self.tree.bind("<Double-1>", self.open_selected)
+        self.detail = tk.StringVar(value="")
+        self.wrap(ttk.Label(box, text="창을 닫으면 인쇄 받기가 멈춥니다 (최소화는 괜찮아요). "
+                                      "PDF 저장 성공이 웹사이트의 프린터 지원 여부까지 확인해 주지는 않습니다.",
+                            style="Muted.TLabel")).pack(side="bottom", fill="x", pady=(10, 0), before=table)
+
+        footer = ttk.Frame(box)
+        footer.pack(side="bottom", fill="x", pady=(8, 0), before=table)
+        ttk.Button(footer, text="PDF 폴더 열기", command=self.open_output).pack(side="left")
+        ttk.Button(footer, text="파일 가져오기", command=self.import_file).pack(side="left", padx=6)
+        more = ttk.Menubutton(footer, text="더보기")
+        menu = tk.Menu(more, tearoff=False, font=(FONT, 10))
+        menu.add_command(label="선택한 PDF 열기", command=self.open_result)
+        menu.add_command(label="선택 작업 다시 시도", command=self.retry)
+        menu.add_command(label="작업 로그 열기", command=self.open_job_folder)
+        menu.add_separator()
+        menu.add_command(label="프린터 다시 설정", command=self.setup_printer)
+        menu.add_command(label="수신 중지/시작", command=self.toggle_engine)
+        menu.add_command(label="연결 설정 (고급)", command=self.settings)
+        menu.add_separator()
+        menu.add_command(label="사이트 오류 안내", command=self.site_help)
+        menu.add_command(label="진단 내보내기", command=self.export_diagnostics)
+        more["menu"] = menu
+        more.pack(side="right")
+        self.wrap(ttk.Label(box, textvariable=self.detail, style="Muted.TLabel")).pack(
+            side="bottom", fill="x", pady=(6, 0), before=table)
+
+    @staticmethod
+    def wrap(label):
+        label.bind("<Configure>", lambda event: event.widget.configure(wraplength=max(event.width - 4, 50)))
+        return label
+
+    def _brand_mark(self, parent, size):
+        canvas = tk.Canvas(parent, width=size, height=size, bg=BG, highlightthickness=0, bd=0)
+        radius = size * 0.3
+
+        def rounded(x0, y0, x1, y1, fill):
+            points = [x0 + radius, y0, x1 - radius, y0, x1, y0, x1, y0 + radius,
+                      x1, y1 - radius, x1, y1, x1 - radius, y1, x0 + radius, y1,
+                      x0, y1, x0, y1 - radius, x0, y0 + radius, x0, y0]
+            canvas.create_polygon(points, smooth=True, fill=fill, outline=fill)
+
+        rounded(size * 0.16, size * 0.16, size, size, MINT)
+        rounded(0, 0, size * 0.84, size * 0.84, ACCENT)
+        canvas.create_oval(size * 0.28, size * 0.28, size * 0.5, size * 0.5,
+                           fill="#ffffff", outline="#ffffff")
+        return canvas
+
+    def set_check(self, key, state, text):
+        dot, variable = self.check_rows[key]
+        dot.configure(fg={"ok": GOOD, "wait": WAIT, "bad": BAD}[state])
+        variable.set(text)
+
+    def update_overview(self):
+        if not hasattr(self, "check_rows"):
+            return
+        if self.config.get("ghostpcl"):
+            self.set_check("converter", "ok", "준비됨")
+        elif self.converter_pending:
+            self.set_check("converter", "wait", "처음 한 번 내려받는 중… (인터넷 필요)")
+        elif self.converter_error:
+            self.set_check("converter", "bad", "준비 실패 · 더보기 → 연결 설정에서 지정하거나 앱을 다시 실행하세요")
+        else:
+            self.set_check("converter", "wait", "확인 중…")
+        if self.pending_setup:
+            self.set_check("printer", "wait", "설정 중… 관리자 확인 창에서 '예'를 누르세요")
+        elif self.route_ready:
+            driver = owned_queue_driver(self.inventory) or ""
+            self.set_check("printer", "ok", f"설치됨 · {driver} · {self.config['host']}" if driver else f"설치됨 ({self.config['host']})")
+        elif self.address_change_notice:
+            self.set_check("printer", "bad", "IP가 바뀌어 다시 연결해야 합니다")
+        else:
+            self.set_check("printer", "bad", "아직 설치되지 않았습니다")
+        receiving = bool(self.engine is not None and getattr(self.engine, "host", None))
+        if receiving:
+            snmp = ("" if not self.config.get("snmp_enabled")
+                    else " · SNMP 응답" if getattr(self.engine, "snmp_active", False)
+                    else " · SNMP 시작 실패")
+            self.set_check("receiver", "ok", f"대기 중 · {self.engine.host}:{self.engine.port}{snmp}")
+        elif self.engine is not None:
+            self.set_check("receiver", "wait", "파일 가져오기만 가능 (프린터 설정 후 자동 시작)")
+        else:
+            self.set_check("receiver", "bad", "중지됨")
+        if self.pending_setup:
+            headline, button, enabled = "프린터를 설정하고 있습니다…", "설정 중…", False
+        elif not self.route_ready:
+            headline = ("IP 주소가 바뀌었습니다. 버튼을 눌러 프린터를 다시 연결하세요."
+                        if self.address_change_notice else "버튼 한 번으로 'SayScore PDF' 프린터를 추가하세요.")
+            button, enabled = "프린터 자동 설정", True
+        elif not receiving:
+            headline, button, enabled = "인쇄 받기가 멈춰 있습니다.", "인쇄 받기 시작", True
+        else:
+            headline, button, enabled = "준비 완료 · 인쇄할 때 프린터로 'SayScore PDF'를 선택하세요.", "PDF 폴더 열기", True
+        if self.phase.get() != headline and not self.phase.get().startswith("새 PDF"):
+            self.phase.set(headline)
+        self.headline.configure(fg=INK if self.route_ready and receiving else (WAIT if self.pending_setup else BAD))
+        self.primary.configure(text=button, state="normal" if enabled else "disabled")
+
+    def primary_action(self):
+        if not self.route_ready:
+            self.setup_printer(confirm=False)
+        elif not (self.engine is not None and self.engine.host):
+            if self.engine:
+                self.toggle_engine()
+            self.start()
+        else:
+            self.open_output()
+
+    def write_runtime_status(self, *_args):
+        listener = getattr(self.engine, "_listener", None)
+        try:
+            bound = listener.getsockname() if listener else None
+        except OSError:
+            bound = None
+        report = {"product": "SayScore PDF", "pid": os.getpid(), "updated": time.time(),
+                  "status": self.status.get(), "phase": self.phase.get(), "route": self.route.get(),
+                  "configured_host": self.config["host"], "configured_port": self.config["port"],
+                  "printer_host": self.config.get("printer_host"),
+                  "processing_active": self.engine is not None,
+                  "listener_host": bound[0] if bound else None,
+                  "listener_port": bound[1] if bound else None,
+                  "listener_active": bool(bound), "queue_health": self.queue_health,
+                  "address_change_notice": self.address_change_notice,
+                  "queue_health_pending": self.health_pending,
+                  "queue_name": self.config.get("queue_name"),
+                  "receive_rate": self.config.get("receive_rate"),
+                  "snmp_enabled": bool(self.config.get("snmp_enabled")),
+                  "snmp_active": bool(getattr(self.engine, "snmp_active", False)),
+                  "snmp_error": getattr(self.engine, "snmp_error", ""),
+                  "bidirectional_diagnostics": (self.engine.communication_status()
+                                                   if self.engine and hasattr(self.engine, "communication_status")
+                                                   else None),
+                  "converter_ready": bool(self.config.get("ghostpcl")),
+                  "windows_print_validation": "not inferred from queue registration",
+                  "website_validation": "untested"}
+        try:
+            target = self.data / "runtime-status.json"
+            temporary = target.with_suffix(".tmp")
+            temporary.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+            temporary.replace(target)
+        except OSError:
+            pass
+
+    def request_health(self):
+        if self.health_pending:
+            if time.monotonic() - self.health_requested > 10:
+                self.queue_health = {"state": "unknown", "detail": "Windows 프린터 상태 조회 지연 · 결과 미확인"}
+                self.health_label.set(self.queue_health["detail"])
+            return
+        self.health_pending = True
+        self.health_requested = time.monotonic()
+        name = owned_queue_name(self.inventory) or self.config.get("queue_name") or QUEUE_NAME
+
+        def read():
+            try:
+                health = queue_health(name)
+            except (OSError, ValueError) as exc:
+                health = {"state": "unknown", "detail": str(exc)}
+            health["checked"] = time.time()
+            self.events.put({"kind": "queue_health", "health": health})
+
+        threading.Thread(target=read, daemon=True).start()
+
+    def prepare_converter(self):
+        if self.config.get("ghostpcl") or self.converter_pending or sys.platform != "win32":
+            return
+        self.converter_pending, self.converter_error = True, ""
+        self.update_overview()
+        destination = PROJECT / "vendor"
+        try:
+            destination.mkdir(exist_ok=True)
+            probe = destination / ".write-test"
+            probe.write_bytes(b"")
+            probe.unlink()
+        except OSError:
+            destination = self.data / "vendor"
+        command = ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass",
+                   "-File", str(PROJECT / "scripts" / "Get-GhostPCL.ps1"), "-Destination", str(destination)]
+
+        def run():
+            error = ""
+            try:
+                result = subprocess.run(command, capture_output=True, encoding="utf-8", errors="replace",
+                                        timeout=900, creationflags=NO_WINDOW)
+                if result.returncode:
+                    error = (result.stderr or result.stdout).strip()[-600:]
+            except (OSError, subprocess.SubprocessError) as exc:
+                error = str(exc)
+            path = find_converter("pcl", PROJECT) or find_converter("pcl", self.data)
+            self.events.put({"kind": "converter", "path": path, "error": "" if path else (error or "변환기를 찾지 못했습니다.")})
+
+        threading.Thread(target=run, daemon=True).start()
+
+    def converter_ready(self, event):
+        self.converter_pending = False
+        self.converter_error = event.get("error", "")
+        if event.get("path"):
+            self.config["ghostpcl"] = event["path"]
+            if self.engine:
+                self.engine.ghostpcl = event["path"]
+                for job in list(self.jobs.values()):
+                    if job.get("state") == "failed" and "GhostPCL" in job.get("detail", "") and job.get("capture_complete"):
+                        try:
+                            self.engine.retry(job["id"])
+                        except (OSError, ValueError, RuntimeError):
+                            pass
+        self.update_overview()
+        self.write_runtime_status()
+
+    def start(self):
+        if self.engine:
+            return
+        engine = None
+        try:
+            engine = Engine(self.data, self.events.put,
+                            ghostscript=self.config["ghostscript"], ghostpcl=self.config["ghostpcl"],
+                            receive_rate=self.config.get("receive_rate", DEFAULT_RECEIVE_RATE),
+                            snmp_enabled=bool(self.config.get("snmp_enabled")),
+                            snmp_identity=snmp_identity_from_config(self.config, self.inventory))
+            if self.config["host"] not in local_ipv4_addresses():
+                raise ValueError("사용 가능한 사설 IPv4 주소가 없습니다. 네트워크(Wi-Fi/유선)에 연결한 뒤 다시 실행하세요.")
+            snmp_port = RELAY_CAPTURE_SNMP_PORT if self.relay_address else 161
+            engine.start(host=self.config["host"], port=int(self.config["port"]),
+                         allow_local_network=True, snmp_port=snmp_port)
+            self.engine = engine
+            ready = self.refresh_route()
+            self.status.set(("전용 프린터 수신 대기" if ready else "프린터 연결 준비 필요 · 파일 가져오기 사용 가능")
+                            + f" · 수신기 {self.config['host']}:{self.config['port']}")
+            if self.connection_warning:
+                self.status.set(self.connection_warning + " · " + self.status.get())
+            if getattr(engine, "snmp_error", ""):
+                self.status.set(engine.snmp_error + " · " + self.status.get())
+        except (OSError, ValueError, RuntimeError) as exc:
+            try:
+                if engine is None:
+                    raise RuntimeError(str(exc))
+                engine.start_files_only()
+                self.engine = engine
+                self.status.set(f"프린터 연결 준비 필요 · 파일 가져오기 사용 가능 · 수신 시작 실패: {exc}")
+                if self.connection_warning:
+                    self.status.set(self.connection_warning + " · " + self.status.get())
+            except (OSError, ValueError, RuntimeError) as file_exc:
+                self.status.set(f"수신/파일 처리를 시작하지 못했습니다: {file_exc}")
+        self.update_overview()
+
+    def refresh_route(self):
+        self.inventory = printer_inventory()
+        try:
+            self.addresses = local_ipv4_addresses()
+        except OSError:
+            self.addresses = []
+        relay_capture, self.relay_address = relay_route(self.data, self.addresses)
+        if relay_capture:
+            self.addresses = [relay_capture] + [item for item in self.addresses if item != relay_capture]
+        printer_addresses = [self.relay_address] if self.relay_address else None
+        self.config["printer_host"] = self.relay_address or self.config["host"]
+        host, port, printer = choose_endpoint(self.inventory, self.addresses, printer_addresses)
+        self.address_change_notice = address_change_notice(self.inventory, self.addresses, printer_addresses)
+        ready = bool(printer and host == self.config["host"] and port == 9100)
+        self.route_ready = ready
+        self.route.set(f"연결할 프린터: {printer}" if ready else (self.address_change_notice
+                       or "프린터 연결 준비 필요 · '프린터 자동 설정'으로 전용 SayScore PDF 큐를 준비하세요."))
+        self.update_overview()
+        return ready
+
+    def site_help(self):
+        messagebox.showinfo("사이트 오류 안내 · 등록되지 않은 프린터", SITE_REGISTRATION_HELP, parent=self.root)
+
+    def check_network(self):
+        if self.engine and self.engine.host:
+            try:
+                addresses = local_ipv4_addresses()
+            except OSError as exc:
+                self.status.set(f"네트워크 주소 확인 실패 · 프린터 연결을 확인하세요: {exc}")
+            else:
+                if self.engine.host not in addresses:
+                    try:
+                        self.engine.stop()
+                        self.engine.start_files_only()
+                        self.connection_warning = "네트워크 주소가 바뀌었습니다. 프린터 연결을 갱신하세요."
+                        self.status.set(self.connection_warning + " · 파일 가져오기 사용 가능")
+                        if addresses:
+                            self.config.update(host=addresses[0],
+                                               port=RELAY_CAPTURE_RAW_PORT if self.relay_address else 9100)
+                        self.auto_setup_asked = False
+                        self.root.after(500, self.auto_setup)
+                    except (OSError, ValueError, RuntimeError) as exc:
+                        self.status.set(f"네트워크 변경 후 수신 중지 확인 필요: {exc}")
+        was_ready = self.route_ready
+        ready = self.refresh_route()
+        receiving = (self.engine is not None and self.engine.host == self.config["host"]
+                     and self.engine.port == self.config["port"])
+        if receiving and not self.pending_setup:
+            if ready and not was_ready:
+                self.connection_warning = ""
+                self.status.set(f"전용 프린터 연결 갱신 확인 · 수신 대기 · {self.config['host']}:{self.config['port']} · 사이트 호환성 미검증")
+            elif was_ready and not ready:
+                self.status.set(self.address_change_notice or "프린터 연결 준비 필요 · 전용 큐의 연결 설정을 확인하세요.")
+        self.root.after(5000, self.check_network)
+        self.request_health()
+        self.write_runtime_status()
+
+    def auto_setup(self):
+        if (sys.platform != "win32" or self.route_ready or self.pending_setup
+                or self.auto_setup_asked or not self.addresses):
+            return
+        self.auto_setup_asked = True
+        if self.address_change_notice:
+            message = "이 PC의 IP 주소가 바뀌어 'SayScore PDF' 프린터를 새 주소로 다시 연결해야 합니다."
+        else:
+            message = "인쇄한 문서를 PDF로 받으려면 'SayScore PDF' 프린터를 이 PC에 한 번 추가해야 합니다."
+        message += ("\n\n지금 자동으로 설정할까요?\n\n· Windows 관리자 확인 창이 뜨면 '예'를 누르세요."
+                    "\n· 다른 프린터와 기본 프린터는 바꾸지 않습니다.")
+        if messagebox.askyesno("SayScore PDF 프린터 설정", message, parent=self.root):
+            self.setup_printer(confirm=False)
+
+    def setup_printer(self, confirm=True):
+        if sys.platform != "win32":
+            messagebox.showerror("프린터 연결", "전용 프린터 등록은 Windows에서 지원됩니다.")
+            return
+        if self.pending_setup:
+            return
+        try:
+            addresses = local_ipv4_addresses()
+            host = self.config["host"] if self.config["host"] in addresses else (addresses[0] if addresses else "")
+            if not host:
+                raise ValueError("이 PC에 연결된 네트워크(사설 IPv4 주소)가 없습니다. Wi-Fi 또는 유선 네트워크에 연결한 뒤 다시 시도하세요.")
+            inventory = printer_inventory()
+            script, driver = setup_choice(inventory, native_windows_arch())
+            queue_name = clean_queue_name(self.config.get("queue_name")) or QUEUE_NAME
+            previous_name = owned_queue_name(inventory)
+            printer_host = self.config.get("printer_host") or host
+        except (OSError, ValueError, AttributeError) as exc:
+            messagebox.showerror("프린터 설정을 시작할 수 없습니다", str(exc), parent=self.root)
+            return
+        rename_note = (f"\n이름 변경: '{previous_name}' → '{queue_name}'"
+                       if previous_name and previous_name != queue_name else "")
+        if confirm and not messagebox.askyesno(
+                "SayScore PDF 프린터 설정",
+                f"'{queue_name}' 프린터를 {printer_host} 중계 주소로 설정합니다.\n드라이버: {driver}{rename_note}\n\n"
+                "관리자 확인 창이 뜨면 '예'를 누르세요. 다른 프린터는 바꾸지 않습니다.", parent=self.root):
+            return
+        result_path = self.data / "printer-setup-result.json"
+        try:
+            result_path.unlink()
+        except FileNotFoundError:
+            pass
+        except OSError as exc:
+            messagebox.showerror("프린터 설정 실패", str(exc), parent=self.root)
+            return
+        arguments = ["-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden",
+                     "-File", str(PROJECT / "scripts" / "Setup-SayScorePrinter.ps1"),
+                     "-Installer", script, "-CaptureAddress", host, "-DriverName", driver,
+                     "-QueueName", queue_name, "-ResultPath", str(result_path)]
+        if printer_host != host:
+            arguments += ["-PrinterAddress", printer_host]
+        if previous_name and previous_name != queue_name:
+            arguments += ["-PreviousQueueName", previous_name]
+        if self.config.get("snmp_enabled"):
+            arguments += ["-Bidirectional"]
+        import ctypes
+        code = ctypes.windll.shell32.ShellExecuteW(None, "runas", "powershell.exe",
+                                                   subprocess.list2cmdline(arguments), str(PROJECT), 0)
+        if code <= 32:
+            self.status.set("관리자 확인이 취소되어 프린터를 설정하지 않았습니다. '프린터 자동 설정'을 다시 누르세요."
+                            if code == 5 else f"관리자 권한 실행을 시작하지 못했습니다 (코드 {code}).")
+            self.update_overview()
+            return
+        self.pending_setup = {"host": host, "printer_host": printer_host, "port": 9100,
+                              "driver": driver, "result": result_path}
+        self.status.set("프린터를 설정하는 중입니다…")
+        self.update_overview()
+        self.root.after(1000, lambda: self.check_setup(180))
+
+    def check_setup(self, attempts):
+        expected = self.pending_setup or {}
+        result_file = expected.get("result")
+        outcome = None
+        if result_file and Path(result_file).is_file():
+            try:
+                outcome = json.loads(Path(result_file).read_text(encoding="utf-8-sig"))
+            except (OSError, ValueError):
+                outcome = None
+        self.inventory = printer_inventory()
+        try:
+            addresses = local_ipv4_addresses()
+            relay_capture, relay_address = relay_route(self.data, addresses)
+            if relay_capture:
+                addresses = [relay_capture] + [item for item in addresses if item != relay_capture]
+            host, port, printer = choose_endpoint(
+                self.inventory, addresses, [relay_address] if relay_address else None)
+        except OSError:
+            host, port, printer = "", 9100, ""
+        applied = bool(printer and (not expected or (
+            host == expected["host"] and port == expected["port"]
+            and any(p["name"] == printer and p.get("driver") == expected["driver"]
+                    for p in self.inventory["printers"]))))
+        if outcome is not None and outcome.get("ok") and outcome.get("driver") and expected:
+            expected["driver"] = outcome["driver"]
+            self.setup_warning = outcome.get("warning", "")
+        if outcome is not None and not outcome.get("ok") and not applied:
+            self.pending_setup = None
+            self.status.set("프린터 설정 실패: " + outcome.get("message", ""))
+            self.update_overview()
+            messagebox.showerror("프린터 설정 실패",
+                                 outcome.get("message", "") + "\n\n문제가 계속되면 더보기 → 진단 내보내기 파일을 전달해 주세요.",
+                                 parent=self.root)
+            return
+        listener_port = RELAY_CAPTURE_RAW_PORT if relay_address else port
+        if applied and (host != self.config["host"] or listener_port != self.config["port"]
+                        or not self.engine or self.engine.host is None):
+            if self.engine and not self.toggle_engine():
+                return
+            self.config.update(host=host, port=listener_port)
+            self.start()
+        if applied and self.refresh_route():
+            self.pending_setup = None
+            self.connection_warning = ""
+            receiving = self.engine is not None and self.engine.host == self.config["host"]
+            self.status.set(f"전용 프린터 등록 확인 · 수신 {'대기' if receiving else '중지/파일 처리만 가능'} · {self.config['host']}:{self.config['port']} · 사이트 호환성 미검증")
+            if getattr(self, "setup_warning", ""):
+                self.status.set(self.setup_warning + " · " + self.status.get())
+            self.update_overview()
+        elif attempts:
+            self.root.after(1000, lambda: self.check_setup(attempts - 1))
+        else:
+            self.pending_setup = None
+            self.status.set("프린터 설정 결과를 확인하지 못했습니다. '프린터 자동 설정'을 다시 눌러 보세요.")
+            self.update_overview()
+
+    def toggle_engine(self):
+        if self.engine:
+            try:
+                self.engine.stop()
+            except RuntimeError as exc:
+                self.status.set(f"수신 중지 대기: {exc}")
+                return False
+            self.engine = None
+            self.status.set("수신 중지 · 다시 시작하면 새 인쇄 작업을 감지합니다.")
+            self.update_overview()
+        else:
+            self.start()
+        return True
+
+    def consume(self):
+        for _ in range(100):
+            try:
+                event = self.events.get_nowait()
+            except queue.Empty:
+                break
+            if event.get("kind") == "queue_health":
+                self.health_pending = False
+                self.queue_health = event["health"]
+                self.health_label.set("Windows 프린터 상태: " + self.queue_health["detail"])
+                self.write_runtime_status()
+                continue
+            if event.get("kind") == "converter":
+                self.converter_ready(event)
+                continue
+            job_id = event.get("id")
+            if not job_id:
+                self.status.set(event.get("detail", ""))
+                continue
+            history = event.pop("_history", False)
+            self.jobs[job_id] = event
+            created = event.get("created") or event.get("updated") or time.time()
+            name = Path(event.get("output") or "").name if event.get("output") else Path(event.get("input") or "인쇄 작업").name
+            if name == "original.bin":
+                name = "인쇄 작업"
+            values = (time.strftime("%m-%d %H:%M", time.localtime(created)),
+                      LABELS.get(event["state"], event["state"]), name, event.get("detail", ""))
+            if self.tree.exists(job_id):
+                self.tree.item(job_id, values=values)
+            else:
+                self.tree.insert("", 0, iid=job_id, values=values)
+            if history:
+                continue
+            if event["state"] == "completed":
+                self.phase.set(f"새 PDF 저장됨 · {name}  (두 번 클릭해 열기)")
+                self.tree.selection_set(job_id)
+                self.root.after(15000, self.clear_notice)
+            elif event["state"] in ("processing", "receiving"):
+                self.phase.set("인쇄 작업을 받아 PDF로 바꾸는 중…")
+            elif event["state"] == "failed":
+                self.phase.set("PDF로 바꾸지 못한 작업이 있습니다 · 아래 목록을 확인하세요")
+                self.root.after(15000, self.clear_notice)
+        self.root.after(100, self.consume)
+
+    def clear_notice(self):
+        self.phase.set("")
+        self.update_overview()
+
+    def selection(self):
+        ids = self.tree.selection()
+        return self.jobs.get(ids[0]) if ids else None
+
+    def selected(self, _event=None):
+        job = self.selection()
+        if job:
+            self.detail.set(job.get("detail", "") + ("\n" + job["output"] if job.get("output") else ""))
+
+    def open_selected(self, _event=None):
+        job = self.selection()
+        if job and job.get("output") and Path(job["output"]).exists():
+            open_path(Path(job["output"]))
+        elif job:
+            self.open_job_folder()
+
+    def open_output(self):
+        target = self.data / "output"
+        target.mkdir(exist_ok=True)
+        open_path(target)
+
+    def open_result(self):
+        job = self.selection()
+        if job and job.get("output") and Path(job["output"]).exists():
+            open_path(Path(job["output"]))
+
+    def open_job_folder(self):
+        job = self.selection()
+        if job:
+            folder = (self.data / "jobs" / job["id"]).resolve()
+            if folder.is_relative_to(self.data / "jobs") and folder.is_dir():
+                open_path(folder)
+
+    def import_file(self):
+        if not self.engine:
+            self.start()
+        if not self.engine:
+            return
+        path = filedialog.askopenfilename(title="PDF 또는 인쇄 데이터 선택", filetypes=[("인쇄 데이터", "*.pdf *.ps *.prn *.pcl"), ("모든 파일", "*.*")])
+        if path:
+            try:
+                self.engine.submit(Path(path))
+            except (OSError, ValueError, RuntimeError) as exc:
+                messagebox.showerror("가져오기 실패", str(exc))
+
+    def retry(self):
+        job = self.selection()
+        if job and job.get("state") == "failed" and self.engine:
+            try:
+                self.engine.retry(job["id"])
+            except (OSError, ValueError, RuntimeError) as exc:
+                messagebox.showerror("재시도 실패", str(exc))
+
+    def settings(self):
+        dialog = tk.Toplevel(self.root)
+        dialog.title("연결 설정 (고급)")
+        dialog.transient(self.root)
+        dialog.grab_set()
+        form = ttk.Frame(dialog, padding=24)
+        form.pack(fill="both", expand=True)
+        ttk.Label(form, text="보통은 바꿀 필요가 없습니다. 이 PC에 현재 할당된 사설 IPv4 주소만 선택할 수 있습니다.").grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 15))
+        try:
+            addresses = local_ipv4_addresses()
+        except OSError:
+            addresses = []
+        fields = {}
+        rows = (("host", "이 PC의 사설 IPv4"), ("port", "포트"),
+                ("queue_name", "프린터(큐) 이름"), ("receive_rate", "수신 속도 (KB/s, 0=제한없음)"),
+                ("ghostpcl", "PCL 변환기"), ("ghostscript", "PostScript 변환기"))
+        for row, (key, label) in enumerate(rows, 1):
+            ttk.Label(form, text=label).grid(row=row, column=0, sticky="w", pady=7)
+            if key == "receive_rate":
+                initial = str(int(self.config.get("receive_rate", DEFAULT_RECEIVE_RATE)) // 1024)
+            elif key == "port" and self.relay_address:
+                # The Windows queue always uses RAW 9100.  The relay forwards
+                # it to a distinct local capture port to prevent a relay loop.
+                initial = "9100"
+            else:
+                initial = str(self.config.get(key) or "")
+            fields[key] = tk.StringVar(value=initial)
+            if key == "host":
+                ttk.Combobox(form, textvariable=fields[key], values=addresses, state="readonly", width=55).grid(row=row, column=1, padx=10)
+            else:
+                ttk.Entry(form, textvariable=fields[key], width=58).grid(row=row, column=1, padx=10)
+            if key in ("ghostpcl", "ghostscript"):
+                def browse(k=key):
+                    path = filedialog.askopenfilename(parent=dialog, title="변환기 실행 파일 선택")
+                    if path:
+                        fields[k].set(path)
+                ttk.Button(form, text="선택", command=browse).grid(row=row, column=2)
+        snmp_var = tk.BooleanVar(value=bool(self.config.get("snmp_enabled")))
+        ttk.Checkbutton(form, variable=snmp_var,
+                        text="양방향 통신(SNMP) 켜기 · 실제 프린터처럼 UDP 161 상태 응답/검색 지원").grid(
+            row=len(rows) + 1, column=0, columnspan=3, sticky="w", pady=(4, 0))
+        ttk.Label(form, text="프린터 이름이나 양방향(SNMP) 설정을 바꾸면 적용을 위해 '더보기 → 프린터 다시 설정'을 한 번 실행해야 합니다 (관리자 확인).",
+                  style="Muted.TLabel").grid(row=len(rows) + 2, column=0, columnspan=3, sticky="w", pady=(2, 0))
+
+        def save():
+            try:
+                host = fields["host"].get().strip()
+                if host not in local_ipv4_addresses():
+                    raise ValueError("이 PC에 현재 할당된 사설 IPv4 주소만 사용할 수 있습니다. 네트워크 연결 후 설정 창을 다시 여세요.")
+                port = int(fields["port"].get())
+                if port != 9100:
+                    raise ValueError("사이트 인쇄 프로필은 표준 RAW 포트 9100을 사용합니다.")
+                queue_name = clean_queue_name(fields["queue_name"].get())
+                if not queue_name:
+                    raise ValueError("프린터(큐) 이름은 비울 수 없고 ! , / \\ 문자는 쓸 수 없습니다.")
+                rate_text = fields["receive_rate"].get().strip() or "0"
+                if not rate_text.isdigit():
+                    raise ValueError("수신 속도는 KB/s 단위의 0 이상 정수여야 합니다.")
+                receive_rate = clean_receive_rate(int(rate_text) * 1024, DEFAULT_RECEIVE_RATE)
+                listener_port = RELAY_CAPTURE_RAW_PORT if self.relay_address else port
+                config = {"host": host, "port": listener_port, "queue_name": queue_name,
+                          "receive_rate": receive_rate, "snmp_enabled": bool(snmp_var.get())}
+                for key in ("ghostpcl", "ghostscript"):
+                    config[key] = fields[key].get().strip() or None
+                    if config[key] and not Path(config[key]).is_file():
+                        raise ValueError(f"변환기 파일을 찾을 수 없습니다: {config[key]}")
+                renamed = queue_name != (owned_queue_name(self.inventory) or self.config.get("queue_name"))
+                bidi_changed = bool(snmp_var.get()) != bool(self.config.get("snmp_enabled"))
+                if self.engine and not self.toggle_engine():
+                    raise RuntimeError("이전 작업이 종료되지 않았습니다. 잠시 후 다시 시도하세요.")
+                self.config = config
+                self.connection_warning = ""
+                (self.data / "settings.json").write_text(json.dumps(config, ensure_ascii=False, indent=2), encoding="utf-8")
+                dialog.destroy()
+                self.start()
+                self.refresh_route()
+                if renamed or bidi_changed:
+                    messagebox.showinfo("설정 변경",
+                                        "변경 내용을 Windows에 적용하려면 '더보기 → 프린터 다시 설정'을 "
+                                        "눌러 주세요 (관리자 확인).",
+                                        parent=self.root)
+            except (ValueError, OSError, RuntimeError) as exc:
+                messagebox.showerror("설정을 저장할 수 없습니다", str(exc), parent=dialog)
+        ttk.Button(form, text="저장하고 연결", command=save).grid(row=len(rows) + 3, column=1, sticky="e", pady=(15, 0))
+
+    def export_diagnostics(self):
+        destination = filedialog.asksaveasfilename(title="진단 파일 저장", initialfile="sayscore-pdf-diagnostics.json", defaultextension=".json")
+        if destination:
+            try:
+                setup_result = None
+                try:
+                    setup_result = json.loads((self.data / "printer-setup-result.json").read_text(encoding="utf-8-sig"))
+                except (OSError, ValueError):
+                    pass
+                report = {"inventory": printer_inventory(), "settings": self.config,
+                          "running": self.engine is not None, "queue_health": self.queue_health,
+                          "address_change_notice": self.address_change_notice,
+                          "site_registration_help": SITE_REGISTRATION_HELP,
+                          "last_printer_setup": setup_result, "converter_error": self.converter_error,
+                          "queue_health_pending": self.health_pending,
+                          "bidirectional_diagnostics": (self.engine.communication_status()
+                                                         if self.engine and hasattr(self.engine, "communication_status")
+                                                         else None),
+                          "recent_bidirectional_requests": (self.engine.recent_communication()
+                                                             if self.engine and hasattr(self.engine, "recent_communication")
+                                                             else None),
+                          "jobs": list(self.jobs.values())}
+                Path(destination).write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+                self.detail.set(f"진단 저장 완료: {destination}")
+            except OSError as exc:
+                messagebox.showerror("진단 저장 실패", str(exc))
+
+    def close(self):
+        if self.engine:
+            try:
+                self.engine.stop()
+            except RuntimeError as exc:
+                self.status.set(f"작업 종료 대기: {exc}")
+                return
+        self.engine = None
+        self.status.set("앱 종료 · 수신/파일 처리 중지")
+        self.root.destroy()
+
+    def _atexit_cleanup(self):
+        engine, self.engine = self.engine, None
+        if engine is not None:
+            try:
+                engine.stop()
+            except Exception:
+                pass
+
+def default_data_dir() -> Path:
+    candidate = PROJECT / "data"
+    try:
+        candidate.mkdir(parents=True, exist_ok=True)
+        probe = candidate / ".write-test"
+        probe.write_bytes(b"")
+        probe.unlink()
+        return candidate
+    except OSError:
+        base = Path(os.environ.get("LOCALAPPDATA") or Path.home())
+        return base / "SayScorePDF"
+
+_instance_handle = None
+
+def already_running() -> bool:
+    global _instance_handle
+    if sys.platform != "win32":
+        return False
+    import ctypes
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel.CreateMutexW.restype = ctypes.c_void_p
+    _instance_handle = kernel.CreateMutexW(None, False, "Local\\SayScorePDF.App")
+    if ctypes.get_last_error() != 183:
+        return False
+    user = ctypes.windll.user32
+    window = user.FindWindowW(None, "SayScore PDF")
+    if window:
+        user.ShowWindow(window, 9)
+        user.SetForegroundWindow(window)
+    return True
+
+def main():
+    parser = argparse.ArgumentParser(description="SayScore PDF · 인쇄 감지와 PDF 저장")
+    parser.add_argument("--data", type=Path, default=None)
+    parser.add_argument("--smoke", action="store_true", help="수신 없이 UI를 열고 자동으로 닫아 확인")
+    args = parser.parse_args()
+    if not args.smoke and already_running():
+        return
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            ctypes.windll.shcore.SetProcessDpiAwareness(1)
+        except (AttributeError, OSError):
+            pass
+    root = tk.Tk()
+    App(root, args.data or default_data_dir(), smoke=args.smoke)
+    root.mainloop()
+
+if __name__ == "__main__":
+    main()
