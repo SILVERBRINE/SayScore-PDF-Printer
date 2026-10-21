@@ -1,7 +1,7 @@
 # Bundled Samsung printer drivers
 
 Unmodified files from Samsung's official download center. They are redistributed here
-with the SayScore PDF one-click kit; they are not MIT-licensed project code.
+with the SayScore PDF one-click kit; they are not covered by the project's GPL-3.0 license.
 Samsung/HP license terms for the driver apply. No license file ships inside these packages.
 All bundled files were byte-compared with these archives, and both catalogs were checked with Get-AuthenticodeSignature on 2026-10-20: Status Valid,
 signer "Microsoft Windows Hardware Compatibility Publisher". The installer re-checks this.

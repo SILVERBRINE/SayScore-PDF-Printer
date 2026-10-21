@@ -7,7 +7,7 @@ name = "sayscore-pdf"
 version = "0.1.0"
 description = "SayScore PDF: local RAW print capture and automatic PDF output"
 requires-python = ">=3.11"
-license = {text = "MIT"}
+license = {text = "GPL-3.0-or-later"}
 
 [project.scripts]
 sayscore-pdf = "easy_output.app:main"

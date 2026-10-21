@@ -81,6 +81,10 @@ PC에 이미 설치된 다른 프린터나 기본 프린터 설정은 변경하�
 
 SayScore PDF는 공익을 위해 무료로 제공됩니다. 개발과 유지에 도움을 주고 싶다면 [GitHub Sponsors](https://github.com/sponsors/SILVERBRINE)로 후원할 수 있습니다. 앱 오른쪽 위의 **♥ 후원하기** 버튼으로도 열 수 있습니다.
 
+## 공식 배포처
+
+SayScore PDF의 공식 배포처는 이 저장소의 [Releases](https://github.com/SILVERBRINE/SayScore-PDF-Printer/releases)뿐입니다. 다른 곳에서 받은 설치 파일은 변조되었을 수 있으니 사용하지 마세요.
+
 ## 라이선스
 
-SayScore PDF 코드는 [MIT 라이선스](LICENSE)입니다. 설치 파일에 함께 들어가는 Python, GhostPCL(AGPL-3.0), Samsung 프린터 드라이버 등은 각자의 라이선스를 따릅니다. 자세한 내용은 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)를 보세요.
+Copyright (C) 2026 SILVERBRINE. SayScore PDF 코드는 [GNU GPL v3](LICENSE) 또는 그 이후 버전으로 배포됩니다. 누구나 자유롭게 쓰고 고치고 다시 배포할 수 있지만, 수정본을 배포할 때는 소스 코드도 같은 라이선스로 공개해야 합니다. 설치 파일에 함께 들어가는 Python, GhostPCL(AGPL-3.0), Samsung 프린터 드라이버 등은 각자의 라이선스를 따릅니다. 자세한 내용은 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)를 보세요.

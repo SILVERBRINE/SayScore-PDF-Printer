@@ -81,6 +81,10 @@ The [stats workflow](.github/workflows/stats.yml) updates these once a day. GitH
 
 SayScore PDF is free for the public good. If you would like to support its development and upkeep, you can sponsor it through [GitHub Sponsors](https://github.com/sponsors/SILVERBRINE). The **♥ 후원하기** (Sponsor) button at the top right of the app opens the same page.
 
+## Official downloads
+
+The only official source of SayScore PDF is this repository's [Releases](https://github.com/SILVERBRINE/SayScore-PDF-Printer/releases) page. Do not use installers obtained elsewhere; they may have been tampered with.
+
 ## License
 
-SayScore PDF's code is under the [MIT License](LICENSE). Python, GhostPCL (AGPL-3.0), the Samsung printer drivers and other components bundled with the installer follow their own licenses. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+Copyright (C) 2026 SILVERBRINE. SayScore PDF's code is licensed under the [GNU GPL v3](LICENSE) or any later version. Anyone may use, modify and redistribute it, but modified versions must also be released as source under the same license. Python, GhostPCL (AGPL-3.0), the Samsung printer drivers and other components bundled with the installer follow their own licenses. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

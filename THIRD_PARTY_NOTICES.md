@@ -1,6 +1,6 @@
 # Third-party components
 
-SayScore PDF's own code is MIT-licensed (see `LICENSE`). The Windows installer and
+SayScore PDF's own code is licensed under GPL-3.0-or-later (see `LICENSE`). The Windows installer and
 portable ZIP also bundle the components below, unmodified, under their own licenses.
 The build (`.github/workflows/release.yml`) downloads each one from the source listed.
 
