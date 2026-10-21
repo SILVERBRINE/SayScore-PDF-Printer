@@ -22,6 +22,22 @@ function Test-PythonW([string]$Path) {
     } catch { return $false }
 }
 
+# Mirrors easy_output.app.default_data_dir: the app folder when writable (ZIP),
+# otherwise the user's profile (installed under Program Files).
+function Get-DataDirectory {
+    $candidate = Join-Path $project 'data'
+    try {
+        New-Item -ItemType Directory -Force -Path $candidate -ErrorAction Stop | Out-Null
+        $probe = Join-Path $candidate '.write-test'
+        [IO.File]::WriteAllBytes($probe, [byte[]]@())
+        Remove-Item -LiteralPath $probe -Force -ErrorAction Stop
+        return $candidate
+    } catch {
+        $base = if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { $env:USERPROFILE }
+        return Join-Path $base 'SayScorePDF'
+    }
+}
+
 function Find-PythonW {
     $bundled = Join-Path $project 'vendor\python-x64\3.13.9\pythonw.exe'
     if (Test-PythonW $bundled) { return $bundled }
@@ -52,7 +68,8 @@ try {
         [pscustomobject]@{ PythonW = $pythonw; Entry = $entry; Started = $false }
         return
     }
-    $relay = & (Join-Path $PSScriptRoot 'Ensure-SayScoreRelay.ps1')
+    $data = Get-DataDirectory
+    $relay = & (Join-Path $PSScriptRoot 'Ensure-SayScoreRelay.ps1') -DataDirectory $data
     if (-not $relay -or -not $relay.RelayAddress) {
         throw '프린터 네트워크 중계기를 준비하지 못했습니다.'
     }
@@ -77,7 +94,8 @@ try {
             }
         } catch { }  # A missing shortcut never blocks the app.
     }
-    Start-Process -FilePath $pythonw -ArgumentList ('"' + $entry + '"') -WorkingDirectory $project -ErrorAction Stop
+    Start-Process -FilePath $pythonw -ArgumentList ('"' + $entry + '" --data "' + $data.TrimEnd('\') + '"') `
+        -WorkingDirectory $project -ErrorAction Stop
 } catch {
     Show-Error ('SayScore PDF를 시작하지 못했습니다.' + "`n`n" + $_.Exception.Message)
     exit 1

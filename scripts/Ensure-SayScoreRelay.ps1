@@ -1,5 +1,5 @@
 ﻿[CmdletBinding()]
-param([switch]$Check)
+param([switch]$Check, [string]$DataDirectory)
 
 # The relay runs in a dedicated, minimal WSL 2 distribution. Its address lives
 # in the WSL VM and is never assigned to Windows, so the printer port still
@@ -8,7 +8,8 @@ param([switch]$Check)
 
 $ErrorActionPreference = 'Stop'
 $project = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
-$statePath = Join-Path $project 'data\relay-runtime.json'
+if (-not $DataDirectory) { $DataDirectory = Join-Path $project 'data' }
+$statePath = Join-Path $DataDirectory 'relay-runtime.json'
 $distribution = 'SayScore-Relay'
 $installDirectory = Join-Path $env:LOCALAPPDATA 'SayScore PDF\relay-wsl'
 $relayVersion = '6-wsl'

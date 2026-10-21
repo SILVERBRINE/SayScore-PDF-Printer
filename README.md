@@ -2,20 +2,29 @@
 
 Windows 인쇄 작업을 실제 Windows 프린터 드라이버와 Standard TCP/IP Port로 받아 PDF로 변환합니다.
 
-## 실행
+## 설치 (권장)
 
-1. 압축을 완전히 풉니다.
-2. `SayScore PDF.cmd`를 더블클릭합니다.
-3. WSL 2가 없는 호환 PC에서는 설치 동의를 묻고 Windows의 WSL 2 기능만 설치합니다. Linux 배포판이나 Docker는 설치하지 않습니다.
-4. 설치 과정에서 재부팅을 요구하면 재부팅 후 같은 파일을 다시 더블클릭합니다.
-5. 최초 실행 또는 네트워크 주소 변경 시 표시되는 Windows 관리자 확인을 승인합니다.
-6. 인쇄 화면에서 `SayScore PDF`를 선택합니다.
+1. [Releases](https://github.com/SILVERBRINE/SayScore-PDF-Printer/releases)에서 `SayScorePDF-Setup-<버전>.exe`를 받아 실행합니다. 받은 파일의 SHA-256은 같은 릴리스의 `SHA256SUMS.txt`와 비교할 수 있습니다.
+2. WSL 2가 없는 PC에서는 설치 프로그램이 Windows의 WSL 2 기능만 켭니다. Linux 배포판이나 Docker는 설치하지 않습니다. 재부팅을 요청하면 재부팅하세요. 로그인하면 SayScore PDF가 자동으로 시작됩니다.
+3. 처음 실행할 때 프린터를 등록하는 Windows 관리자 확인 창이 뜨면 승인합니다.
+4. 인쇄 화면에서 `SayScore PDF`를 선택합니다.
 
-실행기는 동봉된 CPU별 오프라인 파일로 SayScore 전용 경량 WSL 배포판(`SayScore-Relay`, 약 17MB)을 등록하고 네트워크 중계기를 실행한 다음 앱을 시작합니다. 이 배포판은 Windows 드라이브를 마운트하지 않고 Windows 프로그램도 실행하지 않습니다. 중계기 준비에는 인터넷이 필요하지 않습니다. Windows 프린터 큐는 Windows에 할당되지 않은 WSL 2 주소의 RAW 9100/UDP 161을 사용하고, 중계기는 이를 앱 전용 내부 포트 TCP 19100/UDP 1161로 전달합니다. 외부 포트와 내부 포트를 분리해 재귀 중계와 포트 고갈을 방지합니다. 재부팅이나 네트워크 변경 뒤에도 같은 실행 파일을 다시 열면 주소를 재검사합니다.
+제거는 Windows 설정 → 앱에서 합니다. SayScore PDF 프린터와 포트, `SayScore-Relay` 배포판, 자동 시작 항목을 지웁니다. 다른 프린터에서도 쓸 수 있는 프린터 드라이버와 변환된 PDF는 남겨 둡니다.
 
+## 포터블 ZIP
+
+압축을 완전히 푼 뒤 `SayScorePDF.exe`를 실행합니다. 동작은 설치판과 같지만, 자동 시작이 없어 재부팅 뒤에 다시 실행해야 합니다. PDF와 기록은 압축을 푼 폴더의 `data`에 저장됩니다.
+
+## 동작 방식
+
+실행기는 동봉된 CPU별 오프라인 파일로 SayScore 전용 경량 WSL 배포판(`SayScore-Relay`, 약 17MB)을 등록하고 네트워크 중계기를 실행한 다음 앱을 시작합니다. 이 배포판은 Windows 드라이브를 마운트하지 않고 Windows 프로그램도 실행하지 않습니다. 중계기 준비에는 인터넷이 필요하지 않습니다. Windows 프린터 큐는 Windows에 할당되지 않은 WSL 2 주소의 RAW 9100/UDP 161을 사용하고, 중계기는 이를 앱 전용 내부 포트 TCP 19100/UDP 1161로 전달합니다. 외부 포트와 내부 포트를 분리해 재귀 중계와 포트 고갈을 방지합니다. 실행할 때마다 주소를 다시 검사합니다.
+
+## 빌드
+
+`.github/workflows/release.yml`이 공식 출처에서 고정된 버전의 Python 런타임, GhostPCL, Samsung 드라이버를 받아 서명·해시를 검증하고, 중계 rootfs, ZIP, 설치 프로그램을 만듭니다. `v*` 태그를 push하면 초안(draft) 릴리스가 만들어집니다.
 ## 요구 사항
 
-- 지원되는 64비트 Windows 10/11 클라이언트 및 하드웨어 가상화
+- x64 Windows 10 22H2 이상/Windows 11, 또는 ARM64 Windows 11 (하드웨어 가상화 필요)
 - WSL 2 (NAT 네트워크 모드, 기본값)
 - 최소 4GB RAM
 - 최초 프린터 설치 때 관리자 권한
@@ -24,21 +33,23 @@ Windows 인쇄 작업을 실제 Windows 프린터 드라이버와 Standard TCP/I
 
 ## 새 PC에서의 한계
 
-호환되는 일반 Windows 10/11 PC에서는 실행기가 WSL 2 기능 자동 설치를 시도합니다. 이 최초 설치에는 인터넷과 관리자 승인이 필요하며 Windows 재부팅 뒤 같은 실행 파일을 한 번 더 열어야 할 수 있습니다. BIOS/UEFI 가상화 활성화, 조직 보안 정책 해제는 ZIP이 대신할 수 없습니다. 관리자 권한이 없는 PC, Windows Server, 32비트 Windows, 가상화가 차단된 PC까지 포함한 문자 그대로의 "모든 PC"는 지원할 수 없습니다.
+WSL 2 기능을 처음 설치할 때는 인터넷과 관리자 승인이 필요하고 재부팅해야 할 수 있습니다. BIOS/UEFI 가상화 활성화나 조직 보안 정책 해제는 설치 프로그램이 대신할 수 없습니다. 관리자 권한이 없는 PC, Windows Server, 32비트 Windows, ARM64 Windows 10, 가상화가 차단된 PC까지 포함한 문자 그대로의 "모든 PC"는 지원할 수 없습니다.
 
 x64 실제 출력 경로는 검증했습니다. ARM64용 드라이버와 오프라인 중계 파일은 분리해 포함하지만 ARM64 실제 장비 회귀 시험 전에는 ARM64 정상 출력을 보장하지 않습니다.
 
 ## 데이터 위치
 
-- 생성 PDF: `data/output`
-- 원본 작업 및 변환 기록: `data/jobs`
-- 통신 진단 로그: `data/diagnostics`
-- 현재 상태: `data/runtime-status.json`
-- 중계 상태: `data/relay-runtime.json`
+설치판은 `%LOCALAPPDATA%\SayScorePDF`, 포터블 ZIP은 압축을 푼 폴더의 `data`를 씁니다.
+
+- 생성 PDF: `output`
+- 원본 작업 및 변환 기록: `jobs`
+- 통신 진단 로그: `diagnostics`
+- 현재 상태: `runtime-status.json`
+- 중계 상태: `relay-runtime.json`
 
 PC에 이미 설치된 다른 프린터나 기본 프린터 설정은 변경하지 않습니다.
 
 ## 개인정보
 
-- 인쇄 내용, 변환된 PDF, 진단 로그는 모두 이 PC의 `data` 폴더에만 저장되며 외부로 전송하지 않습니다.
-- `data/diagnostics`의 진단 파일에는 PC의 IP 주소, 프린터·드라이버 정보가 들어 있습니다. 이슈를 올릴 때 첨부하기 전에 내용을 확인하세요.
+- 인쇄 내용, 변환된 PDF, 진단 로그는 모두 이 PC의 데이터 폴더에만 저장되며 외부로 전송하지 않습니다.
+- `diagnostics`의 진단 파일에는 PC의 IP 주소, 프린터·드라이버 정보가 들어 있습니다. 이슈를 올릴 때 첨부하기 전에 내용을 확인하세요.

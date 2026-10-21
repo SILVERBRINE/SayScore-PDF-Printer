@@ -1,21 +1,27 @@
-"""Build the Windows one-click ZIP without user jobs, diagnostics, or caches."""
+"""Build the Windows release (ZIP and installer staging) without user jobs, diagnostics, or caches.
+
+    python scripts/package_release.py               # dist/<zip>
+    python scripts/package_release.py --stage DIR   # copy the same files into DIR for Inno Setup
+"""
+import argparse
 from datetime import date
 from pathlib import Path
 import hashlib
 import os
+import shutil
 import zipfile
 
 PROJECT = Path(__file__).resolve().parents[1]
 DESTINATION = PROJECT / "dist" / f"sayscore-pdf-oneclick-windows-{date.today().isoformat()}.zip"
 ROOT_FILES = ("README.md", "사용법.txt", "LICENSE", "pyproject.toml",
-              "start.pyw", "SayScore PDF.cmd", "준비 상태 확인.cmd")
+              "start.pyw", "SayScorePDF.exe", "준비 상태 확인.cmd")
 RUNTIME = Path("vendor", "python-x64", "3.13.9")
 # Parts of the portable Python runtime the app never loads.
 RUNTIME_SKIP = {("Doc",), ("include",), ("libs",), ("Lib", "site-packages"), ("Lib", "ensurepip"),
                 ("Lib", "idlelib"), ("Lib", "test"), ("Lib", "tkinter", "test")}
 # Build inputs that the release does not need at run time.
 VENDOR_SKIP = {("relay-images",), ("ghostpcl-10.08.0-win64.zip",)}
-REQUIRED = (RUNTIME / "pythonw.exe", Path("vendor", "ghostpcl-10.08.0-win64", "gpcl6win64.exe"),
+REQUIRED = (Path("SayScorePDF.exe"), RUNTIME / "pythonw.exe", Path("vendor", "ghostpcl-10.08.0-win64", "gpcl6win64.exe"),
             Path("vendor", "drivers", "samsung-x4305-x64", "us015.inf"),
             Path("vendor", "drivers", "samsung-woa-arm64", "prnsacl1.inf"),
             Path("vendor", "relay-rootfs", "sayscore-relay-amd64.tar.gz"),
@@ -48,11 +54,27 @@ def included_files():
                 yield path
 
 
+def stage(destination: Path) -> None:
+    if destination.exists():
+        shutil.rmtree(destination)
+    for path in sorted(set(included_files())):
+        target = destination / path.relative_to(PROJECT)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(path, target)
+    print(destination)
+
+
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--stage", type=Path, help="copy release files into this folder instead of zipping")
+    args = parser.parse_args()
     missing = [str(path) for path in REQUIRED if not (PROJECT / path).is_file()]
     if missing:
-        raise FileNotFoundError("Missing release inputs (run scripts/build_relay_rootfs.py first?): "
+        raise FileNotFoundError("Missing release inputs (see .github/workflows/release.yml): "
                                 + ", ".join(missing))
+    if args.stage:
+        stage(args.stage.resolve())
+        return
     DESTINATION.parent.mkdir(exist_ok=True)
     temporary = DESTINATION.with_suffix(DESTINATION.suffix + ".tmp")
     with zipfile.ZipFile(temporary, "w", compression=zipfile.ZIP_DEFLATED,

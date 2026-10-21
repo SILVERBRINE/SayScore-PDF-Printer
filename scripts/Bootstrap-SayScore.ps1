@@ -1,5 +1,5 @@
 ﻿[CmdletBinding()]
-param()
+param([switch]$NoShortcut)
 
 $ErrorActionPreference = 'Stop'
 $project = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
@@ -60,7 +60,7 @@ try {
     }
 
     try {
-        & (Join-Path $PSScriptRoot 'Start-SayScore.ps1')
+        & (Join-Path $PSScriptRoot 'Start-SayScore.ps1') -NoShortcut:$NoShortcut
     } catch {
         Show-Notice ("필수 구성요소 설치 후 Windows를 재부팅하고 'SayScore PDF.cmd'를 다시 실행하세요.`n`n" +
                      $_.Exception.Message) 'Warning'
