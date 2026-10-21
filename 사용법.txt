@@ -2,7 +2,7 @@ SayScore PDF 원클릭 사용법
 
 1. 압축을 완전히 풉니다.
 2. "SayScore PDF.cmd"를 더블클릭합니다.
-3. WSL 2와 Docker Desktop이 없으면 안내에 따라 자동 설치를 승인합니다.
+3. WSL 2가 없으면 안내에 따라 Windows 기능 자동 설치를 승인합니다. (Linux 배포판이나 Docker는 설치하지 않습니다)
 4. 재부팅 안내가 나오면 재부팅 후 "SayScore PDF.cmd"를 다시 실행합니다.
 5. 최초 프린터 설치의 Windows 관리자 확인 창에서 "예"를 누릅니다.
 6. 출력할 프로그램에서 프린터로 "SayScore PDF"를 선택합니다.

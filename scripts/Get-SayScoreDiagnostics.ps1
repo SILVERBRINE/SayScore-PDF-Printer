@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [string]$PrinterName = 'SayScore PDF',
     [string]$OutputDirectory = (Join-Path $PSScriptRoot '..\data\diagnostics'),

@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param()
 
 $ErrorActionPreference = 'Stop'
@@ -16,25 +16,23 @@ function Test-Administrator {
     return $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 }
 
-function Get-DockerDesktop {
-    @((Join-Path $env:ProgramFiles 'Docker\Docker\Docker Desktop.exe'),
-      (Join-Path $env:LOCALAPPDATA 'Programs\DockerDesktop\Docker Desktop.exe')) |
-        Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } |
-        Select-Object -First 1
+function Test-WslReady {
+    if (-not (Get-Command wsl.exe -ErrorAction SilentlyContinue)) { return $false }
+    # The inbox stub on PCs without WSL does not support --version.
+    & wsl.exe --version 2>$null | Out-Null
+    return $LASTEXITCODE -eq 0
 }
 
 try {
-    $docker = Get-Command docker.exe -ErrorAction SilentlyContinue
-    $desktop = Get-DockerDesktop
-    $wsl = Get-Command wsl.exe -ErrorAction SilentlyContinue
-    if (-not ($docker -and $desktop -and $wsl)) {
+    if (-not (Test-WslReady)) {
         $os = Get-CimInstance Win32_OperatingSystem
         $cpu = Get-CimInstance Win32_Processor | Select-Object -First 1
         if ([int]$os.BuildNumber -lt 19045 -or [int]$cpu.Architecture -notin @(9, 12)) {
             throw '64비트 Windows 10 22H2(build 19045) 이상 또는 Windows 11이 필요합니다.'
         }
-        if (-not $cpu.VirtualizationFirmwareEnabled -or
-            -not $cpu.SecondLevelAddressTranslationExtensions) {
+        $hypervisor = (Get-CimInstance Win32_ComputerSystem).HypervisorPresent
+        if (-not $hypervisor -and (-not $cpu.VirtualizationFirmwareEnabled -or
+                -not $cpu.SecondLevelAddressTranslationExtensions)) {
             throw 'BIOS/UEFI에서 하드웨어 가상화와 SLAT를 켜야 합니다.'
         }
         if (-not (Test-Administrator)) {
@@ -44,28 +42,21 @@ try {
         }
         Add-Type -AssemblyName System.Windows.Forms
         $answer = [Windows.Forms.MessageBox]::Show(
-            "새 PC 준비를 위해 WSL 2와 Docker Desktop을 설치합니다.`n`n인터넷 연결과 재부팅이 필요할 수 있으며, Docker Desktop 사용 조건은 사용자/조직이 확인해야 합니다.`n`n계속할까요?",
+            "프린터 중계에 필요한 Windows 기능(WSL 2)을 설치합니다.`n`nLinux 배포판이나 다른 프로그램은 설치하지 않습니다. 인터넷 연결이 필요하며, 설치 후 재부팅해야 할 수 있습니다.`n`n계속할까요?",
             'SayScore PDF · 새 PC 준비', 'YesNo', 'Question')
         if ($answer -ne 'Yes') { exit 2 }
 
-        if (-not $wsl) {
+        & wsl.exe --install --no-distribution --web-download
+        if ($LASTEXITCODE -ne 0) {
+            # Older inbox wsl.exe builds lack --no-distribution; enable the features directly.
             & dism.exe /Online /Enable-Feature /FeatureName:Microsoft-Windows-Subsystem-Linux /All /NoRestart
             if ($LASTEXITCODE -notin @(0, 3010)) { throw "WSL 기능을 켜지 못했습니다 (코드 $LASTEXITCODE)." }
             & dism.exe /Online /Enable-Feature /FeatureName:VirtualMachinePlatform /All /NoRestart
             if ($LASTEXITCODE -notin @(0, 3010)) { throw "가상 머신 플랫폼을 켜지 못했습니다 (코드 $LASTEXITCODE)." }
+            & wsl.exe --update --web-download
         }
-        if (-not (Get-DockerDesktop)) {
-            $winget = Get-Command winget.exe -ErrorAction SilentlyContinue
-            if (-not $winget) {
-                throw 'Docker Desktop 자동 설치에 필요한 Windows 앱 설치 관리자(winget)가 없습니다.'
-            }
-            & $winget.Source install --exact --id Docker.DockerDesktop --source winget `
-                --accept-source-agreements --accept-package-agreements --silent
-            if ($LASTEXITCODE -ne 0) { throw "Docker Desktop 설치에 실패했습니다 (코드 $LASTEXITCODE)." }
-        }
-        $desktop = Get-DockerDesktop
-        if (-not $desktop) { throw 'Docker Desktop 설치 후 실행 파일을 찾지 못했습니다.' }
-        Start-Process -FilePath $desktop -WindowStyle Hidden
+        Show-Notice "WSL 2 기능을 설치했습니다.`n`nWindows를 재부팅한 뒤 'SayScore PDF.cmd'를 다시 실행하세요."
+        exit 3010
     }
 
     try {
