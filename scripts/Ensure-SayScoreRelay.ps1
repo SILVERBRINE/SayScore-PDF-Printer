@@ -15,6 +15,8 @@ $installDirectory = Join-Path $env:LOCALAPPDATA 'SayScore PDF\relay-wsl'
 $relayVersion = '6-wsl'
 $python = '/usr/local/bin/python3'
 $relayScript = '/relay/network_relay.py'
+# wsl --exec runs without a shell or login PATH, so call busybox applets directly.
+$busybox = '/bin/busybox'
 $captureRawPort = 19100
 $captureSnmpPort = 1161
 $env:WSL_UTF8 = '1'
@@ -84,9 +86,9 @@ function Get-DistributionOwnership {
 }
 
 function Test-DistributionCurrent([string]$Machine) {
-    $installed = Invoke-Wsl @('-d', $distribution, '--exec', 'cat', '/etc/sayscore-relay-version') -AllowFailure
+    $installed = Invoke-Wsl @('-d', $distribution, '--exec', $busybox, 'cat', '/etc/sayscore-relay-version') -AllowFailure
     if ($installed.Code -ne 0 -or $installed.Output -cne $relayVersion) { return $false }
-    $uname = Invoke-Wsl @('-d', $distribution, '--exec', 'uname', '-m') -AllowFailure
+    $uname = Invoke-Wsl @('-d', $distribution, '--exec', $busybox, 'uname', '-m') -AllowFailure
     return $uname.Code -eq 0 -and $uname.Output -ceq $Machine
 }
 
@@ -117,9 +119,9 @@ function Install-RelayDistribution {
 function Start-Relay([string]$Target) {
     # pgrep -f matches the full command line as a regex; '.' stands in for spaces.
     $pattern = "$([regex]::Escape($relayScript)).--target-host.$([regex]::Escape($Target)).--target-raw-port.$captureRawPort.--target-snmp-port.$captureSnmpPort`$"
-    $running = Invoke-Wsl @('-d', $distribution, '-u', 'root', '--exec', 'pgrep', '-f', $pattern) -AllowFailure
+    $running = Invoke-Wsl @('-d', $distribution, '-u', 'root', '--exec', $busybox, 'pgrep', '-f', $pattern) -AllowFailure
     if ($running.Code -eq 0) { return }
-    Invoke-Wsl @('-d', $distribution, '-u', 'root', '--exec', 'pkill', '-f', $relayScript) -AllowFailure | Out-Null
+    Invoke-Wsl @('-d', $distribution, '-u', 'root', '--exec', $busybox, 'pkill', '-f', $relayScript) -AllowFailure | Out-Null
     # This wsl.exe stays open for the relay's lifetime and keeps the WSL VM running.
     Start-Process -FilePath 'wsl.exe' -WindowStyle Hidden -ArgumentList @(
         '-d', $distribution, '-u', 'root', '--exec', $python, $relayScript,
@@ -127,7 +129,7 @@ function Start-Relay([string]$Target) {
 }
 
 function Get-RelayAddress([string[]]$LocalAddresses) {
-    $text = (Invoke-Wsl @('-d', $distribution, '--exec', 'ip', '-4', '-o', 'addr', 'show', 'eth0')).Output
+    $text = (Invoke-Wsl @('-d', $distribution, '--exec', $busybox, 'ip', '-4', '-o', 'addr', 'show', 'eth0')).Output
     $choices = @([regex]::Matches($text, 'inet\s+(?<ip>\d+\.\d+\.\d+\.\d+)') |
         ForEach-Object { $_.Groups['ip'].Value } | Where-Object {
         $_ -and (Test-PrivateIPv4 $_) -and $_ -notin $LocalAddresses

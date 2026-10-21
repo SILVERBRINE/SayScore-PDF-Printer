@@ -16,17 +16,18 @@ Get-CimInstance Win32_Process -Filter "Name='pythonw.exe' OR Name='python.exe'" 
     Where-Object { $_.ExecutablePath -and $_.ExecutablePath.StartsWith($root, [StringComparison]::OrdinalIgnoreCase) } |
     ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
 
-if (Get-Command wsl.exe -ErrorAction SilentlyContinue) {
-    $registered = @(& wsl.exe --list --quiet 2>$null | ForEach-Object { $_.Trim([char]0, ' ') }) -contains $distribution
-    if ($registered) {
-        $version = (& wsl.exe -d $distribution --exec cat /etc/sayscore-relay-version 2>$null | Out-String).Trim()
-        if ($version -match '^\d+-wsl$') {
-            & wsl.exe --terminate $distribution 2>$null | Out-Null
-            & wsl.exe --unregister $distribution 2>$null | Out-Null
-        }
-    }
-}
 $relayDirectory = Join-Path $env:LOCALAPPDATA 'SayScore PDF\relay-wsl'
+# Only unregister the distro SayScore imported, identified by its install folder.
+$lxss = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Lxss'
+$owned = (Test-Path -LiteralPath $lxss) -and [bool](Get-ChildItem -LiteralPath $lxss -ErrorAction SilentlyContinue |
+    ForEach-Object { Get-ItemProperty -LiteralPath $_.PSPath -ErrorAction SilentlyContinue } |
+    Where-Object { $_.DistributionName -ceq $distribution -and
+        [string]::Equals((([string]$_.BasePath) -replace '^\\\\\?\\', '').TrimEnd('\'), $relayDirectory,
+            [StringComparison]::OrdinalIgnoreCase) })
+if ($owned -and (Get-Command wsl.exe -ErrorAction SilentlyContinue)) {
+    & wsl.exe --terminate $distribution 2>$null | Out-Null
+    & wsl.exe --unregister $distribution 2>$null | Out-Null
+}
 if (Test-Path -LiteralPath $relayDirectory) { Remove-Item -LiteralPath $relayDirectory -Recurse -Force -ErrorAction SilentlyContinue }
 
 $owned = @(Get-Printer -ErrorAction SilentlyContinue | Where-Object Comment -eq $ownerComment)
