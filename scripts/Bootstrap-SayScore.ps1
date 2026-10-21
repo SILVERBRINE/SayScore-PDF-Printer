@@ -55,14 +55,14 @@ try {
             if ($LASTEXITCODE -notin @(0, 3010)) { throw "가상 머신 플랫폼을 켜지 못했습니다 (코드 $LASTEXITCODE)." }
             & wsl.exe --update --web-download
         }
-        Show-Notice "WSL 2 기능을 설치했습니다.`n`nWindows를 재부팅한 뒤 'SayScore PDF.cmd'를 다시 실행하세요."
+        Show-Notice "WSL 2 기능을 설치했습니다.`n`nWindows를 재부팅한 뒤 SayScore PDF를 다시 실행하세요."
         exit 3010
     }
 
     try {
         & (Join-Path $PSScriptRoot 'Start-SayScore.ps1') -NoShortcut:$NoShortcut
     } catch {
-        Show-Notice ("필수 구성요소 설치 후 Windows를 재부팅하고 'SayScore PDF.cmd'를 다시 실행하세요.`n`n" +
+        Show-Notice ("필수 구성요소 설치 후 Windows를 재부팅하고 SayScore PDF를 다시 실행하세요.`n`n" +
                      $_.Exception.Message) 'Warning'
         exit 3010
     }

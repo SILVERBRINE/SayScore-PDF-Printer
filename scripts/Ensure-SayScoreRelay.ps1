@@ -58,40 +58,60 @@ function Invoke-Wsl([string[]]$Arguments, [switch]$AllowFailure) {
 }
 
 function Get-RelayArchitecture {
-    switch ([Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()) {
-        'X64' { return 'amd64' }
-        'Arm64' { return 'arm64' }
-        default { throw "지원하지 않는 Windows 아키텍처입니다: $_" }
+    # WMI reports the real CPU. RuntimeInformation.OSArchitecture and
+    # PROCESSOR_ARCHITECTURE report X64 when this process runs under x64
+    # emulation on ARM64 Windows, which would import the wrong root filesystem.
+    $cpu = Get-CimInstance Win32_Processor -ErrorAction Stop | Select-Object -First 1
+    switch ([int]$cpu.Architecture) {
+        9 { return 'amd64' }
+        12 { return 'arm64' }
+        default { throw "지원하지 않는 CPU 아키텍처입니다: $($cpu.Architecture)" }
     }
 }
 
-function Test-DistributionRegistered {
-    $list = Invoke-Wsl @('--list', '--quiet') -AllowFailure
-    if ($list.Code -ne 0) { return $false }
-    return @($list.Output -split "`r?`n" | ForEach-Object { $_.Trim([char]0, ' ') }) -contains $distribution
+# Returns $null when not registered, otherwise whether SayScore registered it
+# (identified by its install folder, which works even if it cannot start).
+function Get-DistributionOwnership {
+    $root = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Lxss'
+    if (-not (Test-Path -LiteralPath $root)) { return $null }
+    foreach ($key in Get-ChildItem -LiteralPath $root -ErrorAction SilentlyContinue) {
+        $entry = Get-ItemProperty -LiteralPath $key.PSPath -ErrorAction SilentlyContinue
+        if ($entry.DistributionName -cne $distribution) { continue }
+        $base = ([string]$entry.BasePath) -replace '^\\\\\?\\', ''
+        return [string]::Equals($base.TrimEnd('\'), $installDirectory.TrimEnd('\'), [StringComparison]::OrdinalIgnoreCase)
+    }
+    return $null
+}
+
+function Test-DistributionCurrent([string]$Machine) {
+    $installed = Invoke-Wsl @('-d', $distribution, '--exec', 'cat', '/etc/sayscore-relay-version') -AllowFailure
+    if ($installed.Code -ne 0 -or $installed.Output -cne $relayVersion) { return $false }
+    $uname = Invoke-Wsl @('-d', $distribution, '--exec', 'uname', '-m') -AllowFailure
+    return $uname.Code -eq 0 -and $uname.Output -ceq $Machine
 }
 
 function Install-RelayDistribution {
     if (-not (Get-Command wsl.exe -ErrorAction SilentlyContinue)) {
-        throw 'WSL 2가 설치되어 있지 않습니다. "SayScore PDF.cmd"를 다시 실행해 필요한 Windows 기능을 설치하세요.'
+        throw 'WSL 2가 설치되어 있지 않습니다. SayScore PDF를 다시 실행해 필요한 Windows 기능을 설치하세요.'
     }
     $architecture = Get-RelayArchitecture
+    $machine = @{ amd64 = 'x86_64'; arm64 = 'aarch64' }[$architecture]
     $rootfs = Join-Path $project "vendor\relay-rootfs\sayscore-relay-$architecture.tar.gz"
     if (-not (Test-Path -LiteralPath $rootfs -PathType Leaf)) { throw "동봉된 중계 파일이 없습니다: $rootfs" }
 
-    if (Test-DistributionRegistered) {
-        $installed = Invoke-Wsl @('-d', $distribution, '--exec', 'cat', '/etc/sayscore-relay-version') -AllowFailure
-        if ($installed.Code -ne 0 -or $installed.Output -notmatch '^\d+-wsl$') {
-            throw "같은 이름의 다른 WSL 배포판이 있어 변경하지 않았습니다: $distribution"
-        }
-        if ($installed.Output -ceq $relayVersion) { return }
+    $owned = Get-DistributionOwnership
+    if ($owned -eq $false) {
+        throw "같은 이름의 다른 WSL 배포판이 있어 변경하지 않았습니다: $distribution"
+    }
+    if ($owned) {
+        if (Test-DistributionCurrent $machine) { return }
+        # Outdated or built for the other CPU architecture: replace it.
         Invoke-Wsl @('--terminate', $distribution) -AllowFailure | Out-Null
         Invoke-Wsl @('--unregister', $distribution) | Out-Null
     }
     New-Item -ItemType Directory -Force -Path $installDirectory | Out-Null
     Invoke-Wsl @('--import', $distribution, $installDirectory, $rootfs, '--version', '2') | Out-Null
-    $installed = Invoke-Wsl @('-d', $distribution, '--exec', 'cat', '/etc/sayscore-relay-version')
-    if ($installed.Output -cne $relayVersion) { throw '설치된 중계 배포판의 버전 검증에 실패했습니다.' }
+    if (-not (Test-DistributionCurrent $machine)) { throw '설치된 중계 배포판의 버전 또는 CPU 아키텍처 검증에 실패했습니다.' }
 }
 
 function Start-Relay([string]$Target) {
