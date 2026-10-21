@@ -13,7 +13,7 @@ import zipfile
 
 PROJECT = Path(__file__).resolve().parents[1]
 DESTINATION = PROJECT / "dist" / f"sayscore-pdf-oneclick-windows-{date.today().isoformat()}.zip"
-ROOT_FILES = ("README.md", "사용법.txt", "LICENSE", "pyproject.toml",
+ROOT_FILES = ("README.md", "사용법.txt", "LICENSE", "THIRD_PARTY_NOTICES.md", "pyproject.toml",
               "start.pyw", "SayScorePDF.exe", "준비 상태 확인.cmd")
 RUNTIME = Path("vendor", "python-x64", "3.13.9")
 # Parts of the portable Python runtime the app never loads.

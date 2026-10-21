@@ -103,15 +103,16 @@ jobs:
           path: dist
           merge-multiple: true
       # The release carries only the installer; the portable ZIP stays a workflow artifact.
+      # A fixed asset name lets README link to releases/latest/download/SayScorePDF-Setup.exe.
       - name: Release notes
         run: |
-          setup=$(ls dist/SayScorePDF-Setup-*.exe)
-          name=$(basename "$setup")
-          hash=$(sha256sum "$setup" | cut -d' ' -f1)
+          mkdir release
+          cp dist/SayScorePDF-Setup-*.exe release/SayScorePDF-Setup.exe
+          hash=$(sha256sum release/SayScorePDF-Setup.exe | cut -d' ' -f1)
           cat > notes.md <<EOF
           ## 설치
 
-          **\`$name\`** 를 받아 실행하세요. 이 파일 하나면 됩니다.
+          **\`SayScorePDF-Setup.exe\`** (버전 ${GITHUB_REF_NAME#v})를 받아 실행하세요. 이 파일 하나면 됩니다.
 
           아래 "Source code" 항목은 GitHub이 자동으로 붙이는 소스 코드이며 설치에는 필요 없습니다.
 
@@ -121,4 +122,4 @@ jobs:
         with:
           draft: true
           body_path: notes.md
-          files: dist/SayScorePDF-Setup-*.exe
+          files: release/SayScorePDF-Setup.exe
