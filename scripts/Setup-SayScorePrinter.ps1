@@ -27,6 +27,22 @@ try {
             $result.driver = $DriverName
         }
     }
+    # Each installer only adopts queues using its own driver family. When the user
+    # switches family (e.g. Samsung X4305 -> Microsoft PCL6), remove only the queue
+    # SayScore created; the installer then reuses its matching port.
+    $ownerComment = 'SayScore PDF local capture queue; created by Install-LocalPrinter.ps1 v2'
+    $localDrivers = @('HP Universal Printing PCL 6', 'Microsoft PCL6 Class Driver', 'Microsoft PS Class Driver',
+        'Samsung CLX-9252 9352 Series PCL6 Class Driver')
+    $sourceName = if ([string]::IsNullOrWhiteSpace($PreviousQueueName)) { $QueueName } else { $PreviousQueueName }
+    $owned = @(Get-Printer -ErrorAction SilentlyContinue | Where-Object { $_.Name -ceq $sourceName -and $_.Comment -ceq $ownerComment })
+    if ($owned.Count -eq 1 -and $owned[0].DriverName -cne $DriverName) {
+        $sameFamily = ($Installer -eq 'Install-LocalPrinter.ps1') -and ($owned[0].DriverName -in $localDrivers)
+        if (-not $sameFamily) {
+            Remove-Printer -Name $owned[0].Name -Confirm:$false -ErrorAction Stop
+            $output += "Removed owned queue '$($owned[0].Name)' ($($owned[0].DriverName)) to switch to $DriverName`n"
+            $PreviousQueueName = $null
+        }
+    }
     $script = Join-Path $PSScriptRoot $Installer
     $installerArgs = @{ CaptureAddress = $CaptureAddress; DriverName = $DriverName
         QueueName = $QueueName; Apply = $true }

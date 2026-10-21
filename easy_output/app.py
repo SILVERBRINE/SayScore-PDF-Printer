@@ -163,8 +163,30 @@ def bundled_samsung(native_arch: str) -> bool:
     path = BUNDLED_DRIVERS.get(native_arch)
     return bool(path and path.is_file())
 
+DRIVER_LABELS = {
+    X64_DRIVER: "Samsung X4305 (동봉 · 실제 프린터 드라이버)",
+    SAMSUNG_DRIVER: "Samsung CLX-9252/9352 (동봉 · 실제 프린터 드라이버)",
+    "Microsoft PCL6 Class Driver": "Microsoft PCL6 Class Driver (Windows 기본)",
+    "Microsoft PS Class Driver": "Microsoft PS Class Driver (Windows 기본 · Ghostscript 설치 필요)",
+    "HP Universal Printing PCL 6": "HP Universal Printing PCL 6 (HP 드라이버가 설치된 PC만)",
+}
+AUTO_DRIVER_LABEL = "자동 (권장)"
+
+def driver_options(native_arch: str) -> list[str]:
+    """Drivers the user may pick for the SayScore queue on this architecture."""
+    if native_arch == "AMD64":
+        return [X64_DRIVER, "Microsoft PCL6 Class Driver", "Microsoft PS Class Driver",
+                "HP Universal Printing PCL 6"]
+    if native_arch == "ARM64":
+        return [SAMSUNG_DRIVER, "Microsoft PCL6 Class Driver", "Microsoft PS Class Driver"]
+    return []
+
 def setup_choice(inventory: dict, native_arch: str, samsung_x64: bool | None = None,
-                 bundled: bool | None = None) -> tuple[str, str]:
+                 bundled: bool | None = None, preferred: str | None = None) -> tuple[str, str]:
+    if preferred and preferred in driver_options(native_arch):
+        if preferred == X64_DRIVER:
+            return "Install-X64Printer.ps1", X64_DRIVER
+        return "Install-LocalPrinter.ps1", preferred
     owned = owned_queue_driver(inventory)
     if bundled is None:
         bundled = bundled_samsung(native_arch)
@@ -193,6 +215,12 @@ def native_windows_arch() -> str:
     if architecture == 0xaa64:
         return "ARM64"
     raise ValueError(f"지원되지 않는 실제 Windows 아키텍처입니다: {architecture}")
+
+def available_driver_options() -> list[str]:
+    try:
+        return driver_options(native_windows_arch())
+    except (OSError, ValueError, AttributeError):
+        return []
 
 class App:
     def __init__(self, root: tk.Tk, data: Path, smoke: bool = False):
@@ -237,7 +265,7 @@ class App:
                        "ghostpcl": find_converter("pcl", PROJECT) or find_converter("pcl", self.data),
                        "ghostscript": find_converter("ps", PROJECT),
                        "queue_name": owned_queue_name(self.inventory) or QUEUE_NAME,
-                       "receive_rate": DEFAULT_RECEIVE_RATE, "snmp_enabled": True}
+                       "receive_rate": DEFAULT_RECEIVE_RATE, "snmp_enabled": True, "driver": None}
         try:
             saved = json.loads((self.data / "settings.json").read_text(encoding="utf-8"))
             if not isinstance(saved, dict):
@@ -247,6 +275,8 @@ class App:
             self.config["queue_name"] = clean_queue_name(saved.get("queue_name")) or self.config["queue_name"]
             self.config["receive_rate"] = clean_receive_rate(saved.get("receive_rate"), DEFAULT_RECEIVE_RATE)
             self.config["snmp_enabled"] = bool(saved.get("snmp_enabled", True))
+            if saved.get("driver") in available_driver_options():
+                self.config["driver"] = saved["driver"]
             expected_saved_port = RELAY_CAPTURE_RAW_PORT if relay_capture else 9100
             if saved.get("host") in self.addresses and int(saved.get("port", 0)) == expected_saved_port:
                 if not printer:
@@ -701,7 +731,8 @@ class App:
             if not host:
                 raise ValueError("이 PC에 연결된 네트워크(사설 IPv4 주소)가 없습니다. Wi-Fi 또는 유선 네트워크에 연결한 뒤 다시 시도하세요.")
             inventory = printer_inventory()
-            script, driver = setup_choice(inventory, native_windows_arch())
+            script, driver = setup_choice(inventory, native_windows_arch(),
+                                          preferred=self.config.get("driver"))
             queue_name = clean_queue_name(self.config.get("queue_name")) or QUEUE_NAME
             previous_name = owned_queue_name(inventory)
             printer_host = self.config.get("printer_host") or host
@@ -955,12 +986,20 @@ class App:
                     if path:
                         fields[k].set(path)
                 ttk.Button(form, text="선택", command=browse).grid(row=row, column=2)
+        drivers = available_driver_options()
+        driver_labels = [AUTO_DRIVER_LABEL] + [DRIVER_LABELS[name] for name in drivers]
+        current_driver = self.config.get("driver")
+        driver_var = tk.StringVar(value=DRIVER_LABELS.get(current_driver, AUTO_DRIVER_LABEL)
+                                  if current_driver in drivers else AUTO_DRIVER_LABEL)
+        ttk.Label(form, text="프린터 드라이버").grid(row=len(rows) + 1, column=0, sticky="w", pady=7)
+        ttk.Combobox(form, textvariable=driver_var, values=driver_labels, state="readonly", width=55).grid(
+            row=len(rows) + 1, column=1, padx=10)
         snmp_var = tk.BooleanVar(value=bool(self.config.get("snmp_enabled")))
         ttk.Checkbutton(form, variable=snmp_var,
                         text="양방향 통신(SNMP) 켜기 · 실제 프린터처럼 UDP 161 상태 응답/검색 지원").grid(
-            row=len(rows) + 1, column=0, columnspan=3, sticky="w", pady=(4, 0))
-        ttk.Label(form, text="프린터 이름이나 양방향(SNMP) 설정을 바꾸면 적용을 위해 '더보기 → 프린터 다시 설정'을 한 번 실행해야 합니다 (관리자 확인).",
-                  style="Muted.TLabel").grid(row=len(rows) + 2, column=0, columnspan=3, sticky="w", pady=(2, 0))
+            row=len(rows) + 2, column=0, columnspan=3, sticky="w", pady=(4, 0))
+        ttk.Label(form, text="프린터 이름, 드라이버, 양방향(SNMP) 설정을 바꾸면 적용을 위해 '더보기 → 프린터 다시 설정'을 한 번 실행해야 합니다 (관리자 확인).",
+                  style="Muted.TLabel").grid(row=len(rows) + 3, column=0, columnspan=3, sticky="w", pady=(2, 0))
 
         def save():
             try:
@@ -978,14 +1017,17 @@ class App:
                     raise ValueError("수신 속도는 KB/s 단위의 0 이상 정수여야 합니다.")
                 receive_rate = clean_receive_rate(int(rate_text) * 1024, DEFAULT_RECEIVE_RATE)
                 listener_port = RELAY_CAPTURE_RAW_PORT if self.relay_address else port
+                driver = next((name for name in drivers if DRIVER_LABELS[name] == driver_var.get()), None)
                 config = {"host": host, "port": listener_port, "queue_name": queue_name,
-                          "receive_rate": receive_rate, "snmp_enabled": bool(snmp_var.get())}
+                          "receive_rate": receive_rate, "snmp_enabled": bool(snmp_var.get()),
+                          "driver": driver}
                 for key in ("ghostpcl", "ghostscript"):
                     config[key] = fields[key].get().strip() or None
                     if config[key] and not Path(config[key]).is_file():
                         raise ValueError(f"변환기 파일을 찾을 수 없습니다: {config[key]}")
                 renamed = queue_name != (owned_queue_name(self.inventory) or self.config.get("queue_name"))
                 bidi_changed = bool(snmp_var.get()) != bool(self.config.get("snmp_enabled"))
+                driver_changed = driver != self.config.get("driver")
                 if self.engine and not self.toggle_engine():
                     raise RuntimeError("이전 작업이 종료되지 않았습니다. 잠시 후 다시 시도하세요.")
                 self.config = config
@@ -994,14 +1036,14 @@ class App:
                 dialog.destroy()
                 self.start()
                 self.refresh_route()
-                if renamed or bidi_changed:
+                if renamed or bidi_changed or driver_changed:
                     messagebox.showinfo("설정 변경",
                                         "변경 내용을 Windows에 적용하려면 '더보기 → 프린터 다시 설정'을 "
                                         "눌러 주세요 (관리자 확인).",
                                         parent=self.root)
             except (ValueError, OSError, RuntimeError) as exc:
                 messagebox.showerror("설정을 저장할 수 없습니다", str(exc), parent=dialog)
-        ttk.Button(form, text="저장하고 연결", command=save).grid(row=len(rows) + 3, column=1, sticky="e", pady=(15, 0))
+        ttk.Button(form, text="저장하고 연결", command=save).grid(row=len(rows) + 4, column=1, sticky="e", pady=(15, 0))
 
     def export_diagnostics(self):
         destination = filedialog.asksaveasfilename(title="진단 파일 저장", initialfile="sayscore-pdf-diagnostics.json", defaultextension=".json")
