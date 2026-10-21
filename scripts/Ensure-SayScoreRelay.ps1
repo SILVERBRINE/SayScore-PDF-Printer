@@ -50,9 +50,21 @@ function Get-CaptureAddress {
 function Invoke-Wsl([string[]]$Arguments, [switch]$AllowFailure) {
     $previousPreference = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
-    try { $output = & wsl.exe @Arguments 2>&1 | Out-String }
-    finally { $ErrorActionPreference = $previousPreference }
+    # WSL_UTF8 makes wsl.exe print UTF-8; decode it as such, not the console code page.
+    $previousEncoding = [Console]::OutputEncoding
+    try {
+        [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
+        $output = & wsl.exe @Arguments 2>&1 | Out-String
+    } finally {
+        [Console]::OutputEncoding = $previousEncoding
+        $ErrorActionPreference = $previousPreference
+    }
     $code = $LASTEXITCODE
+    if ($code -ne 0 -and $output -match 'WSL_E_WSL_OPTIONAL_COMPONENT_REQUIRED|HCS_E_HYPERV_NOT_INSTALLED') {
+        throw ('WSL 2에 필요한 Windows 기능이 아직 켜지지 않았습니다. ' +
+               'Windows를 재부팅한 뒤 SayScore PDF를 다시 실행하세요. ' +
+               '재부팅 후에도 같으면 BIOS/UEFI에서 가상화가 켜져 있는지 확인하세요.')
+    }
     if ($code -ne 0 -and -not $AllowFailure) {
         throw "WSL 명령 실패 (코드 $code): wsl $($Arguments -join ' ')`n$($output.Trim())"
     }

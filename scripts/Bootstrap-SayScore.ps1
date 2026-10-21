@@ -17,9 +17,7 @@ function Test-Administrator {
 }
 
 function Test-WslReady {
-    if (-not (Get-Command wsl.exe -ErrorAction SilentlyContinue)) { return $false }
-    # The inbox stub on PCs without WSL does not support --version.
-    & wsl.exe --version 2>$null | Out-Null
+    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'Test-WslReady.ps1')
     return $LASTEXITCODE -eq 0
 }
 

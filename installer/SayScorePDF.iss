@@ -77,9 +77,10 @@ end;
 
 function WslReady: Boolean;
 begin
-  // The inbox stub on PCs without WSL does not support --version.
-  Result := FileExists(ExpandConstant('{sys}\wsl.exe')) and
-            (RunHidden(ExpandConstant('{sys}\wsl.exe'), '--version') = 0);
+  // Checks wsl.exe and that both WSL optional components are enabled.
+  Result := RunHidden(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
+    '-NoProfile -ExecutionPolicy Bypass -File "' +
+    ExpandConstant('{app}\scripts\Test-WslReady.ps1') + '"') = 0;
 end;
 
 function WslRestartPending: Boolean;
