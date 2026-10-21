@@ -52,7 +52,7 @@ The launcher registers a dedicated, lightweight WSL distribution (`SayScore-Rela
 
 Turning on WSL 2 the first time needs an internet connection and administrator approval, and may need a restart. The installer cannot enable BIOS/UEFI virtualization or lift organization security policies. PCs without administrator rights, Windows Server, 32-bit Windows, ARM64 Windows 10 and PCs with virtualization blocked are not supported.
 
-The full x64 print path has been verified. The ARM64 driver and relay files are bundled separately, but ARM64 output is not guaranteed until it passes regression testing on real ARM64 hardware.
+Installation through PDF output has been verified on real x64 and ARM64 hardware.
 
 ## Data location
 
