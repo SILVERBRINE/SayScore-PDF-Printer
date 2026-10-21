@@ -102,7 +102,23 @@ jobs:
           pattern: sayscore-pdf-*
           path: dist
           merge-multiple: true
+      # The release carries only the installer; the portable ZIP stays a workflow artifact.
+      - name: Release notes
+        run: |
+          setup=$(ls dist/SayScorePDF-Setup-*.exe)
+          name=$(basename "$setup")
+          hash=$(sha256sum "$setup" | cut -d' ' -f1)
+          cat > notes.md <<EOF
+          ## 설치
+
+          **\`$name\`** 를 받아 실행하세요. 이 파일 하나면 됩니다.
+
+          아래 "Source code" 항목은 GitHub이 자동으로 붙이는 소스 코드이며 설치에는 필요 없습니다.
+
+          SHA-256: \`$hash\`
+          EOF
       - uses: softprops/action-gh-release@v2
         with:
           draft: true
-          files: dist/*
+          body_path: notes.md
+          files: dist/SayScorePDF-Setup-*.exe
