@@ -501,11 +501,11 @@ class App:
                                       font=(FONT, 12, "bold"), scale=scale)
         self.primary.pack(anchor="w")
 
-        # Shown only in simple mode (no WSL relay), where the printer targets this PC's own address.
+        # Shown only without any relay (e.g. the portable ZIP), where the printer targets this PC's own address.
         self.simple_banner = tk.Label(
-            box, text="⚠ 간편 모드 · 프린터가 이 PC 자신의 주소로 연결되어 있어, 일부 프로그램이나 웹사이트는 "
-                      "가상 프린터로 인식해 인쇄를 막을 수 있습니다. 그런 경우 더보기 → '권장 모드 설치'를 이용하세요 "
-                      "(재부팅 필요).",
+            box, text="⚠ 프린터 중계 없이 실행 중 · 프린터가 이 PC 자신의 주소로 연결되어 있어, 일부 프로그램이나 "
+                      "웹사이트는 가상 프린터로 인식해 인쇄를 막을 수 있습니다. 아래 '연결 방식'에서 권장 또는 간편 모드를 "
+                      "고르세요.",
             font=(FONT, 9), bg=SOFT[WAIT], fg="#7a4f0f", anchor="w", justify="left", padx=px(12), pady=px(8))
         self.wrap(self.simple_banner)
         self.banner_anchor = card

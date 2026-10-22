@@ -93,9 +93,9 @@ try {
     }
 
     $answer = Show-Notice ("SayScore PDF를 어떤 방식으로 사용할까요?`n`n" +
-        "[예] 권장 모드`nWindows 기능(WSL 2)을 설치합니다. 가상 프린터로 인식될 가능성이 가장 낮지만, " +
+        "[예] 권장 모드`nWindows 기능(WSL 2)을 설치합니다. 오래 검증된 방식이지만 " +
         "인터넷 연결과 재부팅이 필요합니다. Linux 배포판이나 다른 프로그램은 설치하지 않습니다.`n`n" +
-        "[아니요] 간편 모드 (시험 기능)`n재부팅 없이 바로 사용합니다. $simpleNote`n`n" +
+        "[아니요] 간편 모드`n재부팅 없이 바로 사용합니다. $simpleNote`n`n" +
         "PC방처럼 재부팅하면 초기화되는 PC에서는 간편 모드를 고르세요.") 'Question' 'YesNoCancel'
     if ($answer -eq 'Yes') { Install-WslFeature }
     if ($answer -eq 'No') {
