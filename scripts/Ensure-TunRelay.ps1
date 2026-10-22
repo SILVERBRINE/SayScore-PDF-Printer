@@ -10,19 +10,14 @@ $stateFile = Join-Path $env:ProgramData 'SayScorePDF\tun-relay.json'
 
 function Get-RelayState {
     try { $state = Get-Content -LiteralPath $stateFile -Raw -Encoding UTF8 | ConvertFrom-Json } catch { return $null }
+    # The relay rewrites this file every 10 seconds once its adapter is up. A test
+    # connection would not work here: before the app listens, Windows Firewall's
+    # stealth mode drops the connection instead of refusing it.
     $age = [DateTimeOffset]::Now.ToUnixTimeSeconds() - [int64]$state.updated
-    if ($age -gt 60 -or -not $state.relay_address -or -not $state.capture_address) { return $null }
-    # The relay turns a connection to the printer address into one to the app's
-    # port, so even "refused" (app not started yet) proves the relay is working.
-    $client = [Net.Sockets.TcpClient]::new()
-    try {
-        $task = $client.ConnectAsync([string]$state.relay_address, 9100)
-        try { [void]$task.Wait(2000) } catch { }
-        $refused = $task.Exception -and ($task.Exception.InnerException -is [Net.Sockets.SocketException]) -and
-            $task.Exception.InnerException.SocketErrorCode -eq 'ConnectionRefused'
-        if ($client.Connected -or $refused) { return $state }
-    } finally { $client.Dispose() }
-    return $null
+    if ($age -gt 30 -or -not $state.relay_address -or -not $state.capture_address) { return $null }
+    $process = Get-Process -Id ([int]$state.pid) -ErrorAction SilentlyContinue
+    if (-not $process -or $process.ProcessName -notlike 'python*') { return $null }
+    return $state
 }
 
 $state = Get-RelayState
@@ -31,14 +26,15 @@ if (-not $state) {
     $process = Start-Process powershell.exe -Verb RunAs -Wait -PassThru -WindowStyle Hidden -ArgumentList @(
         '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$install`"")
     if ($process.ExitCode -ne 0) { throw "간편 모드 중계를 설치하지 못했습니다 (코드 $($process.ExitCode))." }
-    for ($attempt = 0; $attempt -lt 30 -and -not $state; $attempt++) {
+    for ($attempt = 0; $attempt -lt 60 -and -not $state; $attempt++) {
         Start-Sleep -Seconds 1
         $state = Get-RelayState
     }
     if (-not $state) {
         $log = Join-Path $env:ProgramData 'SayScorePDF\tun-relay.log'
-        $tail = if (Test-Path -LiteralPath $log) { (Get-Content -LiteralPath $log -Tail 3) -join "`n" } else { '' }
-        throw "간편 모드 중계가 시작되지 않았습니다.`n$tail"
+        $tail = if (Test-Path -LiteralPath $log) { (Get-Content -LiteralPath $log -Tail 5 -Encoding UTF8) -join "`n" }
+                else { '중계 기록이 없습니다: 예약 작업 "SayScore PDF Relay"가 실행되지 않았습니다.' }
+        throw "간편 모드 중계가 시작되지 않았습니다.`n`n$tail"
     }
 }
 

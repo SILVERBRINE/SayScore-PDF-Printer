@@ -160,13 +160,17 @@ def write_state(state: dict) -> None:
 
 
 def run() -> None:
+    log(f"starting · pid {os.getpid()} · {sys.executable}")
     wintun = Wintun()
     adapter, index = wintun.create()
+    log(f"adapter created · interface {index}")
     session = None
     try:
         network = pick_subnet(index)
         host, target, peer = (str(network.network_address + n) for n in (1, 2, 3))
+        log(f"subnet {network}")
         configure(index, host, peer, network.prefixlen)
+        log("address and firewall configured")
         session = wintun.dll.WintunStartSession(adapter, 0x400000)
         if not session:
             raise ctypes.WinError(ctypes.get_last_error())
