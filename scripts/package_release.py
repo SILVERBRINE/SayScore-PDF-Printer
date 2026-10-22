@@ -25,7 +25,8 @@ REQUIRED = (Path("SayScorePDF.exe"), RUNTIME / "pythonw.exe", Path("vendor", "gh
             Path("vendor", "drivers", "samsung-x4305-x64", "us015.inf"),
             Path("vendor", "drivers", "samsung-woa-arm64", "prnsacl1.inf"),
             Path("vendor", "relay-rootfs", "sayscore-relay-amd64.tar.gz"),
-            Path("vendor", "relay-rootfs", "sayscore-relay-arm64.tar.gz"))
+            Path("vendor", "relay-rootfs", "sayscore-relay-arm64.tar.gz"),
+            Path("vendor", "wintun", "amd64", "wintun.dll"))
 
 
 def _skipped(relative: Path) -> bool:

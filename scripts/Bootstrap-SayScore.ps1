@@ -4,14 +4,13 @@ param([switch]$NoShortcut, [switch]$InstallWsl)
 # Picks how the printer reaches the app, then starts it:
 # - recommended mode: a WSL 2 relay, so the printer targets an address Windows
 #   does not own (needs the WSL 2 feature, virtualization and one restart);
-# - simple mode: the printer targets this PC's own address. No restart, but some
-#   programs may treat it as a virtual printer.
+# - simple mode: a Wintun adapter (easy_output.tunrelay) plays the same role
+#   without a VM, so no restart or virtualization is needed.
 # -InstallWsl (also used by the app's menu) installs the WSL 2 feature only.
 
 $ErrorActionPreference = 'Stop'
 $modeFile = Join-Path $env:LOCALAPPDATA 'SayScore PDF\mode.txt'
-$simpleWarning = ('간편 모드에서는 프린터가 이 PC 자신의 주소로 연결됩니다. ' +
-    '일부 프로그램이나 웹사이트는 이를 가상 프린터로 인식해 인쇄를 막을 수 있습니다.')
+$simpleNote = '앱 전용 가상 네트워크 어댑터(Wintun)를 추가합니다. 관리자 확인이 필요하며, 재부팅은 필요 없습니다.'
 
 function Show-Notice([string]$Message, [string]$Icon = 'Information', [string]$Buttons = 'OK') {
     Add-Type -AssemblyName System.Windows.Forms
@@ -79,15 +78,15 @@ function Save-SimpleMode {
 
 try {
     if ($InstallWsl) { Install-WslFeature }
+    # mode.txt holds the user's choice ('simple' or 'wsl'); the app's mode toggle writes it too.
+    $mode = if (Test-Path -LiteralPath $modeFile) { (Get-Content -LiteralPath $modeFile -Raw).Trim() } else { '' }
+    if ($mode -eq 'simple') { Start-App -Simple }
     if (Test-WslReady) { Start-App }
-    if ((Test-Path -LiteralPath $modeFile) -and (Get-Content -LiteralPath $modeFile -Raw).Trim() -eq 'simple') {
-        Start-App -Simple
-    }
 
     $blocker = Get-WslBlocker
     if ($blocker) {
         $answer = Show-Notice ("이 PC에서는 권장 모드(WSL 2)를 쓸 수 없습니다.`n$blocker`n`n" +
-            "대신 간편 모드로 바로 사용할까요?`n`n⚠ $simpleWarning") 'Warning' 'YesNo'
+            "대신 간편 모드로 바로 사용할까요?`n`n$simpleNote") 'Warning' 'YesNo'
         if ($answer -ne 'Yes') { exit 2 }
         Save-SimpleMode
         Start-App -Simple
@@ -96,7 +95,7 @@ try {
     $answer = Show-Notice ("SayScore PDF를 어떤 방식으로 사용할까요?`n`n" +
         "[예] 권장 모드`nWindows 기능(WSL 2)을 설치합니다. 가상 프린터로 인식될 가능성이 가장 낮지만, " +
         "인터넷 연결과 재부팅이 필요합니다. Linux 배포판이나 다른 프로그램은 설치하지 않습니다.`n`n" +
-        "[아니요] 간편 모드`n재부팅 없이 바로 사용합니다.`n⚠ $simpleWarning`n`n" +
+        "[아니요] 간편 모드 (시험 기능)`n재부팅 없이 바로 사용합니다. $simpleNote`n`n" +
         "PC방처럼 재부팅하면 초기화되는 PC에서는 간편 모드를 고르세요.") 'Question' 'YesNoCancel'
     if ($answer -eq 'Yes') { Install-WslFeature }
     if ($answer -eq 'No') {

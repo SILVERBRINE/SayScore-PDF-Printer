@@ -16,6 +16,13 @@ Get-CimInstance Win32_Process -Filter "Name='pythonw.exe' OR Name='python.exe'" 
     Where-Object { $_.ExecutablePath -and $_.ExecutablePath.StartsWith($root, [StringComparison]::OrdinalIgnoreCase) } |
     ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
 
+# Simple-mode relay: the SYSTEM task (its adapter goes away with the process),
+# its firewall rules and its state.
+Stop-ScheduledTask -TaskName 'SayScore PDF Relay' -ErrorAction SilentlyContinue
+Unregister-ScheduledTask -TaskName 'SayScore PDF Relay' -Confirm:$false -ErrorAction SilentlyContinue
+Get-NetFirewallRule -Group 'SayScore PDF' -ErrorAction SilentlyContinue | Remove-NetFirewallRule -ErrorAction SilentlyContinue
+Remove-Item -LiteralPath (Join-Path $env:ProgramData 'SayScorePDF') -Recurse -Force -ErrorAction SilentlyContinue
+
 $relayDirectory = Join-Path $env:LOCALAPPDATA 'SayScore PDF\relay-wsl'
 # Only unregister the distro SayScore imported, identified by its install folder.
 $lxss = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Lxss'

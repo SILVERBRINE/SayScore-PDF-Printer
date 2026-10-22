@@ -64,6 +64,7 @@ jobs:
           ./scripts/Get-PythonRuntime.ps1
           ./scripts/Get-GhostPCL.ps1
           ./scripts/Get-SamsungDrivers.ps1
+          ./scripts/Get-Wintun.ps1
       - name: Check the bundled runtime loads the app
         run: |
           & vendor/python-x64/3.13.9/python.exe -c "import tkinter, easy_output.app, easy_output.core; print('import ok')"

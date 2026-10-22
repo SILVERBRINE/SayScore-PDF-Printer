@@ -8,7 +8,7 @@ The Windows printer queue prints to RAW 9100 / UDP 161 on the WSL 2 address, whi
 
 - x64 prefers the bundled Samsung X4305 driver; ARM64 uses the Samsung CLX-9252/9352 ARM64 driver. Microsoft class drivers can be chosen in the app's advanced settings.
 - WSL 2 must use NAT networking (the default), not `networkingMode=mirrored`.
-- Simple mode (chosen on first launch, saved in `%LOCALAPPDATA%\SayScore PDF\mode.txt`, or offered when the relay fails) skips WSL: without `relay-runtime.json` the app listens on this PC's own private IPv4 address on 9100 and the printer port targets it directly. The app shows a warning banner in this mode. The installer itself never installs WSL; the first launch asks.
+- Simple mode (chosen on first launch or with the app's 연결 방식 toggle; saved in `%LOCALAPPDATA%\SayScore PDF\mode.txt` as `simple` or `wsl`) replaces the WSL VM with a Wintun adapter. `easy_output/tunrelay.py` runs as SYSTEM from the `SayScore PDF Relay` scheduled task (`scripts/Install-TunRelay.ps1`, installed copies only), gives Windows `.1` of a free /24, and rewrites packets (`easy_output/tunnat.py`) so a connection to the printer address `.2`:9100 reaches the app on `.1`:19100 from a stand-in peer `.3`; Windows' own TCP stack does the rest. SNMP 161 → 1161 likewise. `scripts/Ensure-TunRelay.ps1` writes `relay-runtime.json` with `mode: tun`. The installer never installs WSL; the first launch asks.
 
 ## Data
 

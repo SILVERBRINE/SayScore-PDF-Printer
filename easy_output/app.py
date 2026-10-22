@@ -551,6 +551,18 @@ class App:
         menu.add_command(label="후원하기 (GitHub Sponsors)", command=lambda: webbrowser.open(SPONSOR_URL))
         more["menu"] = menu
         more.pack(side="right")
+        if sys.platform == "win32":
+            self.mode_buttons = {}
+            toggle = tk.Frame(footer, bg=BG)
+            toggle.pack(side="right", padx=(0, 10))
+            ttk.Label(toggle, text="연결 방식", style="Muted.TLabel").pack(side="left", padx=(0, 6))
+            for mode, label in (("wsl", "권장 · WSL"), ("simple", "간편 · 가상 어댑터")):
+                button = tk.Label(toggle, text=label, font=(FONT, 9, "bold"), padx=px(10), pady=px(6),
+                                  cursor="hand2")
+                button.pack(side="left")
+                button.bind("<Button-1>", lambda _e, m=mode: self.switch_mode(m))
+                self.mode_buttons[mode] = button
+            self.paint_mode_toggle()
         self.wrap(ttk.Label(box, textvariable=self.detail, style="Muted.TLabel")).pack(
             side="bottom", fill="x", pady=(6, 0), before=table)
 
@@ -575,6 +587,49 @@ class App:
 
     def set_pill(self, text, color):
         self.pill.configure(text=f"● {text}", fg=color, bg=SOFT[color])
+
+    def current_mode(self) -> str:
+        """'simple' (Wintun relay), 'wsl' (WSL relay) or '' (no relay)."""
+        if not self.relay_address:
+            return ""
+        try:
+            state = json.loads((self.data / "relay-runtime.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return "wsl"
+        return "simple" if isinstance(state, dict) and state.get("mode") == "tun" else "wsl"
+
+    def paint_mode_toggle(self):
+        if not getattr(self, "mode_buttons", None):
+            return
+        active = self.current_mode()
+        for mode, button in self.mode_buttons.items():
+            on = mode == active
+            button.configure(bg=ACCENT if on else ACCENT_SOFT, fg="#ffffff" if on else ACCENT_INK,
+                             cursor="arrow" if on else "hand2")
+
+    def switch_mode(self, mode: str):
+        if mode == self.current_mode():
+            return
+        name = {"wsl": "권장 모드 (WSL 2 중계)", "simple": "간편 모드 (가상 네트워크 어댑터)"}[mode]
+        if not messagebox.askyesno(
+                "연결 방식 전환",
+                f"{name}로 바꾸고 SayScore PDF를 다시 시작합니다.\n\n"
+                "다시 시작한 뒤 프린터 연결을 새 방식에 맞게 다시 설정하라는 안내가 나오면 '예'를 누르세요.\n\n"
+                "계속할까요?", parent=self.root):
+            return
+        try:
+            mode_file = Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "SayScore PDF" / "mode.txt"
+            mode_file.parent.mkdir(parents=True, exist_ok=True)
+            mode_file.write_text(mode, encoding="ascii")
+            bootstrap = PROJECT / "scripts" / "Bootstrap-SayScore.ps1"
+            # Wait for this window to close so the new instance does not see it as already running.
+            subprocess.Popen(["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden",
+                              "-Command", f"Start-Sleep -Seconds 3; & '{bootstrap}' -NoShortcut"],
+                             creationflags=NO_WINDOW)
+        except OSError as exc:
+            messagebox.showerror("연결 방식 전환", f"전환하지 못했습니다: {exc}", parent=self.root)
+            return
+        self.close()
 
     def install_recommended_mode(self):
         if self.relay_address:
@@ -635,6 +690,7 @@ class App:
             headline, button, enabled = "인쇄할 때 프린터로 'SayScore PDF'를 선택하세요.", "PDF 폴더 열기", True
         if self.phase.get() != headline and not self.phase.get().startswith("새 PDF"):
             self.phase.set(headline)
+        self.paint_mode_toggle()
         if self.relay_address or sys.platform != "win32":
             self.simple_banner.pack_forget()
         elif not self.simple_banner.winfo_manager():
