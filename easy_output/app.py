@@ -17,6 +17,7 @@ import webbrowser
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
+from . import __version__
 from .core import Engine
 from .diagnostics import (address_change_notice, choose_endpoint, find_converter,
                           owned_queues, printer_inventory, OWNER_COMMENT, QUEUE_NAME,
@@ -454,7 +455,7 @@ class App:
         titles = ttk.Frame(header)
         titles.pack(side="left", padx=(12, 0))
         ttk.Label(titles, text="SayScore PDF", font=(FONT, 18, "bold")).pack(anchor="w")
-        ttk.Label(titles, text="인쇄하면 자동으로 PDF로 저장됩니다", style="Muted.TLabel",
+        ttk.Label(titles, text=f"인쇄하면 자동으로 PDF로 저장됩니다 · v{__version__}", style="Muted.TLabel",
                   font=(FONT, 10)).pack(anchor="w")
         # GitHub Sponsors pink so the free project's donation link is easy to spot.
         style.configure("Sponsor.TButton", font=(FONT, 10, "bold"), padding=(14, 8), relief="flat",

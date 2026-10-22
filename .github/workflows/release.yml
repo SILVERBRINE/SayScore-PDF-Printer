@@ -52,7 +52,12 @@ jobs:
       - name: Version
         id: version
         run: |
-          $version = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME.TrimStart('v') } else { "0.1.0.$env:GITHUB_RUN_NUMBER" }
+          # easy_output/__init__.py is the single source; a release tag must match it.
+          $source = (Select-String -Path easy_output/__init__.py -Pattern '__version__ = "(.+)"').Matches[0].Groups[1].Value
+          if ($env:GITHUB_REF_TYPE -eq 'tag') {
+            $version = $env:GITHUB_REF_NAME.TrimStart('v')
+            if ($version -ne $source) { throw "Tag v$version does not match __version__ $source" }
+          } else { $version = "$source.$env:GITHUB_RUN_NUMBER" }
           "value=$version" >> $env:GITHUB_OUTPUT
       - name: Fetch pinned third-party components
         run: |
