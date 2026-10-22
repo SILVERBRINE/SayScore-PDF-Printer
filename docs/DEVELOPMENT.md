@@ -26,5 +26,5 @@ The installed app uses `%LOCALAPPDATA%\SayScorePDF`; the portable ZIP uses `data
 `.github/workflows/release.yml` downloads pinned versions of the Python runtime, GhostPCL and the Samsung drivers from their official sources, verifies signatures and hashes, and builds the relay root filesystems, the portable ZIP and the Inno Setup installer.
 
 - Every push builds the ZIP and installer as workflow artifacts.
-- Pushing a `v*` tag also creates a draft release with a single `SayScorePDF-Setup-<version>.exe`. The README download button opens the latest published release. The version comes from `easy_output/__init__.py`.
+- Pushing a `v*` tag also creates a draft release with a single `SayScorePDF-Setup.exe`. Publishing the draft makes the README download button point to it. The version comes from `easy_output/__init__.py` and is also stamped into the installer and `SayScorePDF.exe` file properties.
 - `.github/workflows/stats.yml` records daily installer downloads and star history on the `stats` branch.
