@@ -6,7 +6,7 @@
 
 A free Windows printer that saves everything you print as a PDF
 
-<a href="https://github.com/SILVERBRINE/SayScore-PDF-Printer/releases/latest/download/SayScorePDF-Setup.exe"><img alt="Download for Windows" src="https://img.shields.io/badge/%E2%AC%87%20Download%20for%20Windows-SayScorePDF--Setup.exe-2f81f7?style=for-the-badge&logo=windows&logoColor=white" height="44"></a>
+<a href="https://github.com/SILVERBRINE/SayScore-PDF-Printer/releases/latest"><img alt="Download for Windows" src="https://img.shields.io/github/v/release/SILVERBRINE/SayScore-PDF-Printer?style=for-the-badge&logo=windows&logoColor=white&label=%E2%AC%87%20Download%20for%20Windows&color=2f81f7" height="44"></a>
 
 [![Latest release](https://img.shields.io/github/v/release/SILVERBRINE/SayScore-PDF-Printer?label=latest)](https://github.com/SILVERBRINE/SayScore-PDF-Printer/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/SILVERBRINE/SayScore-PDF-Printer/total?label=downloads)](https://github.com/SILVERBRINE/SayScore-PDF-Printer/releases)
@@ -16,7 +16,7 @@ A free Windows printer that saves everything you print as a PDF
 
 ## How to use
 
-1. Download the installer with the **Download for Windows** button above and run it.
+1. Click **Download for Windows** above, then download and run `SayScorePDF-Setup-<version>.exe` from that page.
    - If Windows shows "Windows protected your PC", choose **More info → Run anyway**.
 2. On first launch, choose how it connects.
    - **Recommended mode** installs the Windows WSL 2 feature. Least likely to be detected as a virtual printer, but needs one restart.

@@ -6,7 +6,7 @@
 
 인쇄하면 자동으로 PDF로 저장되는 무료 Windows 프린터
 
-<a href="https://github.com/SILVERBRINE/SayScore-PDF-Printer/releases/latest/download/SayScorePDF-Setup.exe"><img alt="Windows용 다운로드" src="https://img.shields.io/badge/%E2%AC%87%20Windows%EC%9A%A9%20%EB%8B%A4%EC%9A%B4%EB%A1%9C%EB%93%9C-SayScorePDF--Setup.exe-2f81f7?style=for-the-badge&logo=windows&logoColor=white" height="44"></a>
+<a href="https://github.com/SILVERBRINE/SayScore-PDF-Printer/releases/latest"><img alt="Windows용 다운로드" src="https://img.shields.io/github/v/release/SILVERBRINE/SayScore-PDF-Printer?style=for-the-badge&logo=windows&logoColor=white&label=%E2%AC%87%20Windows%EC%9A%A9%20%EB%8B%A4%EC%9A%B4%EB%A1%9C%EB%93%9C&color=2f81f7" height="44"></a>
 
 [![최신 버전](https://img.shields.io/github/v/release/SILVERBRINE/SayScore-PDF-Printer?label=%EC%B5%9C%EC%8B%A0%20%EB%B2%84%EC%A0%84)](https://github.com/SILVERBRINE/SayScore-PDF-Printer/releases/latest)
 [![다운로드](https://img.shields.io/github/downloads/SILVERBRINE/SayScore-PDF-Printer/total?label=%EB%8B%A4%EC%9A%B4%EB%A1%9C%EB%93%9C)](https://github.com/SILVERBRINE/SayScore-PDF-Printer/releases)
@@ -16,7 +16,7 @@
 
 ## 사용법
 
-1. 위의 **Windows용 다운로드** 버튼으로 설치 파일을 받아 실행합니다.
+1. 위의 **Windows용 다운로드** 버튼을 누르고, 열리는 페이지에서 `SayScorePDF-Setup-<버전>.exe`를 받아 실행합니다.
    - "Windows의 PC 보호" 창이 뜨면 **추가 정보 → 실행**을 누르세요.
 2. 처음 실행하면 사용 방식을 고릅니다.
    - **권장 모드**: Windows 기능(WSL 2)을 설치합니다. 가상 프린터로 인식될 가능성이 가장 낮지만, 한 번 재부팅해야 합니다.
