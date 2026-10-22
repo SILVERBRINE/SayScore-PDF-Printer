@@ -31,6 +31,7 @@ PrivilegesRequired=admin
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 MinVersion=10.0.19045
+SetupIconFile={#StageDir}\easy_output\assets\sayscore.ico
 UninstallDisplayIcon={app}\SayScorePDF.exe
 UninstallDisplayName=SayScore PDF
 CloseApplications=yes

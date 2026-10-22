@@ -1147,7 +1147,18 @@ def main():
             ctypes.windll.shcore.SetProcessDpiAwareness(1)
         except (AttributeError, OSError):
             pass
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            # Own taskbar entry, so Windows shows the window icon instead of pythonw's.
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("SILVERBRINE.SayScorePDF")
+        except (AttributeError, OSError):
+            pass
     root = tk.Tk()
+    try:
+        root.iconbitmap(default=str(Path(__file__).with_name("assets") / "sayscore.ico"))
+    except tk.TclError:
+        pass
     App(root, args.data or default_data_dir(), smoke=args.smoke)
     root.mainloop()
 
