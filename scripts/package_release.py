@@ -16,9 +16,13 @@ DESTINATION = PROJECT / "dist" / f"sayscore-pdf-oneclick-windows-{date.today().i
 ROOT_FILES = ("README.md", "README.en.md", "사용법.txt", "LICENSE", "THIRD_PARTY_NOTICES.md", "pyproject.toml",
               "start.pyw", "SayScorePDF.exe", "준비 상태 확인.cmd")
 RUNTIME = Path("vendor", "python-x64", "3.13.9")
+# Native ARM64 Python that only runs the simple-mode relay (no GUI).
+RELAY_RUNTIME = Path("vendor", "python-arm64", "3.13.9")
 # Parts of the portable Python runtime the app never loads.
 RUNTIME_SKIP = {("Doc",), ("include",), ("libs",), ("Lib", "site-packages"), ("Lib", "ensurepip"),
                 ("Lib", "idlelib"), ("Lib", "test"), ("Lib", "tkinter", "test")}
+RELAY_RUNTIME_SKIP = RUNTIME_SKIP | {("tcl",), ("Lib", "tkinter"), ("DLLs", "_tkinter.pyd"),
+                                     ("DLLs", "tcl86t.dll"), ("DLLs", "tk86t.dll")}
 # Build inputs that the release does not need at run time.
 VENDOR_SKIP = {("relay-images",), ("ghostpcl-10.08.0-win64.zip",)}
 REQUIRED = (Path("SayScorePDF.exe"), RUNTIME / "pythonw.exe", Path("vendor", "ghostpcl-10.08.0-win64", "gpcl6win64.exe"),
@@ -26,14 +30,16 @@ REQUIRED = (Path("SayScorePDF.exe"), RUNTIME / "pythonw.exe", Path("vendor", "gh
             Path("vendor", "drivers", "samsung-woa-arm64", "prnsacl1.inf"),
             Path("vendor", "relay-rootfs", "sayscore-relay-amd64.tar.gz"),
             Path("vendor", "relay-rootfs", "sayscore-relay-arm64.tar.gz"),
-            Path("vendor", "wintun", "amd64", "wintun.dll"))
+            Path("vendor", "wintun", "amd64", "wintun.dll"), Path("vendor", "wintun", "arm64", "wintun.dll"),
+            RELAY_RUNTIME / "pythonw.exe")
 
 
 def _skipped(relative: Path) -> bool:
     parts = relative.parts
-    if parts[:len(RUNTIME.parts)] == RUNTIME.parts:
-        inner = parts[len(RUNTIME.parts):]
-        return any(inner[:len(skip)] == skip for skip in RUNTIME_SKIP)
+    for runtime, skips in ((RUNTIME, RUNTIME_SKIP), (RELAY_RUNTIME, RELAY_RUNTIME_SKIP)):
+        if parts[:len(runtime.parts)] == runtime.parts:
+            inner = parts[len(runtime.parts):]
+            return any(inner[:len(skip)] == skip for skip in skips)
     if parts[0] == "vendor":
         return any(parts[1:1 + len(skip)] == skip for skip in VENDOR_SKIP)
     return False

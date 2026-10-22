@@ -73,7 +73,7 @@ def powershell(script: str) -> str:
 
 class Wintun:
     def __init__(self):
-        # The DLL must match this process: the bundled x64 runtime loads amd64, also under ARM64 emulation.
+        # The DLL must match this process; ARM64 PCs run the relay on native ARM64 Python.
         arch = "arm64" if platform.machine().lower() in ("arm64", "aarch64") else "amd64"
         dll = ctypes.WinDLL(str(PROJECT / "vendor" / "wintun" / arch / "wintun.dll"), use_last_error=True)
         handle, dword = ctypes.c_void_p, wintypes.DWORD

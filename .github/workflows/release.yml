@@ -62,6 +62,7 @@ jobs:
       - name: Fetch pinned third-party components
         run: |
           ./scripts/Get-PythonRuntime.ps1
+          ./scripts/Get-PythonRuntime.ps1 -Architecture arm64
           ./scripts/Get-GhostPCL.ps1
           ./scripts/Get-SamsungDrivers.ps1
           ./scripts/Get-Wintun.ps1
