@@ -35,10 +35,13 @@ LABELS = {"queued": "대기", "receiving": "수신 중", "processing": "변환 �
           "completed": "✔ 저장됨", "failed": "⚠ 확인 필요"}
 FONT = "Malgun Gothic"
 FONT_CANDIDATES = ("Malgun Gothic", "맑은 고딕", "Segoe UI", "Arial")
-BG, CARD, INK, MUTED = "#f3f2fb", "#ffffff", "#1d2140", "#5b607a"
-ACCENT, ACCENT_DARK, ACCENT_SOFT, ACCENT_INK = "#6d4aff", "#5a3ae0", "#f1edff", "#4b2bc6"
-GOOD, WAIT, BAD = "#1a9c86", "#b7791f", "#d64562"
-MINT, LINE, FOCUS = "#72d9c5", "#e7e4f4", "#c5baff"
+# SayScore brand: theme #6d4aff, purple gradient #3d2bd4 → #9a5cf7, teal-cyan accents.
+BG, CARD, INK, MUTED = "#f6f5ff", "#ffffff", "#1b1840", "#5d5a7a"
+ACCENT, ACCENT_DARK, ACCENT_SOFT, ACCENT_INK = "#6d4aff", "#4f32e0", "#efeaff", "#4b2bc6"
+GRADIENT = ("#4f32e0", "#9a5cf7")
+GOOD, WAIT, BAD = "#0e9f93", "#b7791f", "#d64562"
+SOFT = {GOOD: "#e2f7f3", WAIT: "#fdf3e1", BAD: "#fdebef"}
+LINE, FOCUS = "#e6e2f7", "#c5baff"
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
 
@@ -225,6 +228,93 @@ def available_driver_options() -> list[str]:
     except (OSError, ValueError, AttributeError):
         return []
 
+def blend(start: str, end: str, t: float) -> str:
+    a, b = (tuple(int(c[i:i + 2], 16) for i in (1, 3, 5)) for c in (start, end))
+    return "#%02x%02x%02x" % tuple(round(x + (y - x) * t) for x, y in zip(a, b))
+
+
+class GradientStrip(tk.Canvas):
+    """A thin brand-gradient bar across the top of a card."""
+
+    def __init__(self, parent, height):
+        super().__init__(parent, height=height, bg=CARD, highlightthickness=0, bd=0)
+        self.bind("<Configure>", self._draw)
+
+    def _draw(self, event):
+        self.delete("all")
+        steps = max(1, event.width // 4)
+        for i in range(steps):
+            x0, x1 = event.width * i / steps, event.width * (i + 1) / steps + 1
+            color = blend(*GRADIENT, i / max(1, steps - 1))
+            self.create_rectangle(x0, 0, x1, event.height, fill=color, outline=color)
+
+
+class GradientButton(tk.Canvas):
+    """Rounded primary button in the SayScore gradient; configure(text=, state=) like ttk."""
+
+    def __init__(self, parent, text, command, font, scale=1.0):
+        super().__init__(parent, bg=CARD, highlightthickness=0, bd=0, takefocus=1, cursor="hand2")
+        import tkinter.font as tkfont
+        self._font, self._command, self._scale = font, command, scale
+        self._metrics = tkfont.Font(root=parent, font=font)
+        self._text, self._state, self._hover, self._focus = text, "normal", False, False
+        self.bind("<Enter>", lambda e: self._set(hover=True))
+        self.bind("<Leave>", lambda e: self._set(hover=False))
+        self.bind("<FocusIn>", lambda e: self._set(focus=True))
+        self.bind("<FocusOut>", lambda e: self._set(focus=False))
+        self.bind("<ButtonRelease-1>", self._invoke)
+        for key in ("<Return>", "<space>"):
+            self.bind(key, self._invoke)
+        self._draw()
+
+    def configure(self, cnf=None, **kw):
+        if "text" in kw:
+            self._text = kw.pop("text")
+        if "state" in kw:
+            self._state = kw.pop("state")
+            super().configure(cursor="hand2" if self._state == "normal" else "arrow")
+        if cnf or kw:
+            super().configure(cnf, **kw)
+        self._draw()
+
+    config = configure
+
+    def _set(self, hover=None, focus=None):
+        if hover is not None:
+            self._hover = hover
+        if focus is not None:
+            self._focus = focus
+        self._draw()
+
+    def _invoke(self, _event=None):
+        if self._state == "normal":
+            self._command()
+
+    def _draw(self):
+        s = self._scale
+        width = self._metrics.measure(self._text) + int(48 * s)
+        height = self._metrics.metrics("linespace") + int(24 * s)
+        super().configure(width=width, height=height)
+        self.delete("all")
+        radius = height / 2
+        enabled = self._state == "normal"
+        start, end = GRADIENT if enabled else ("#cfc6f5", "#cfc6f5")
+        if enabled and self._hover:
+            start, end = blend(start, "#000000", 0.12), blend(end, "#000000", 0.12)
+        # One vertical line per column, trimmed at the rounded ends.
+        for x in range(width):
+            dx = max(radius - x - 0.5, x + 0.5 - (width - radius), 0)
+            inset = radius - (max(radius * radius - dx * dx, 0)) ** 0.5
+            color = blend(start, end, x / max(1, width - 1))
+            self.create_line(x, inset, x, height - inset, fill=color)
+        if self._focus and enabled:
+            self.create_text(width / 2, height / 2, text=self._text, font=self._font, fill="#ffffff")
+            self.create_line(radius, height - 4 * s, width - radius, height - 4 * s, fill="#ffffff", dash=(2, 2))
+        else:
+            self.create_text(width / 2, height / 2, text=self._text, font=self._font,
+                             fill="#ffffff" if enabled else "#f6f3ff")
+
+
 class App:
     def __init__(self, root: tk.Tk, data: Path, smoke: bool = False):
         self.root, self.data = root, data.resolve()
@@ -343,51 +433,62 @@ class App:
                         background=ACCENT_SOFT, foreground=ACCENT_INK, arrowcolor=ACCENT_INK)
         style.map("TMenubutton", background=[("active", "#e6ddff")])
         style.configure("Treeview", rowheight=px(34), font=(FONT, 10), background=CARD,
-                        fieldbackground=CARD, foreground=INK, borderwidth=0)
+                        fieldbackground=CARD, foreground=INK, borderwidth=0, relief="flat")
+        style.layout("Treeview", [("Treeview.treearea", {"sticky": "nswe"})])
         style.map("Treeview", background=[("selected", ACCENT_SOFT)], foreground=[("selected", ACCENT_INK)])
-        style.configure("Treeview.Heading", font=(FONT, 9, "bold"), padding=8,
-                        background=BG, foreground=MUTED, relief="flat")
+        style.configure("Treeview.Heading", font=(FONT, 9, "bold"), padding=(10, 8),
+                        background="#f3f0ff", foreground=MUTED, relief="flat", borderwidth=0)
+        style.map("Treeview.Heading", background=[("active", "#ebe5ff")])
         style.configure("TCheckbutton", background=BG, foreground=INK, font=(FONT, 10), focuscolor=BG)
         style.map("TCheckbutton", background=[("active", BG)])
-        style.configure("Vertical.TScrollbar", background=BG, troughcolor=BG, borderwidth=0, arrowcolor=MUTED)
+        style.configure("Vertical.TScrollbar", background=ACCENT_SOFT, troughcolor=CARD, borderwidth=0,
+                        bordercolor=CARD, lightcolor=ACCENT_SOFT, darkcolor=ACCENT_SOFT,
+                        arrowcolor=MUTED, gripcount=0)
+        style.map("Vertical.TScrollbar", background=[("active", "#ddd2ff")])
 
-        box = ttk.Frame(root, padding=(28, 24))
+        box = ttk.Frame(root, padding=(28, 22))
         box.pack(fill="both", expand=True)
         header = ttk.Frame(box)
         header.pack(fill="x")
-        self._brand_mark(header, px(36)).pack(side="left")
-        ttk.Label(header, text="SayScore PDF", font=(FONT, 20, "bold")).pack(side="left", padx=(10, 0))
+        self._brand_mark(header, px(44)).pack(side="left")
+        titles = ttk.Frame(header)
+        titles.pack(side="left", padx=(12, 0))
+        ttk.Label(titles, text="SayScore PDF", font=(FONT, 18, "bold")).pack(anchor="w")
+        ttk.Label(titles, text="인쇄하면 자동으로 PDF로 저장됩니다", style="Muted.TLabel",
+                  font=(FONT, 10)).pack(anchor="w")
         # GitHub Sponsors pink so the free project's donation link is easy to spot.
         style.configure("Sponsor.TButton", font=(FONT, 10, "bold"), padding=(14, 8), relief="flat",
                         borderwidth=0, background="#ffeff7", foreground="#bf3989", focuscolor="#ffeff7")
         style.map("Sponsor.TButton", background=[("active", "#ffd8eb"), ("pressed", "#ffc7e2")])
         ttk.Button(header, text="♥ 후원하기", style="Sponsor.TButton",
                    command=lambda: webbrowser.open(SPONSOR_URL)).pack(side="right")
-        self.wrap(ttk.Label(box, text="켜 두면, 'SayScore PDF' 프린터로 인쇄한 문서가 자동으로 PDF로 저장됩니다.",
-                            style="Muted.TLabel", font=(FONT, 11))).pack(fill="x", pady=(10, 16))
 
         card = tk.Frame(box, bg=CARD, highlightbackground=LINE, highlightcolor=LINE, highlightthickness=1, bd=0)
-        card.pack(fill="x")
-        cardpad = ttk.Frame(card, style="Card.TFrame", padding=(24, 20))
+        card.pack(fill="x", pady=(18, 0))
+        GradientStrip(card, height=px(4)).pack(fill="x")
+        cardpad = ttk.Frame(card, style="Card.TFrame", padding=(24, 18, 24, 22))
         cardpad.pack(fill="x")
-        ttk.Label(cardpad, text="자동 PDF 프린터", style="Eyebrow.TLabel").pack(anchor="w")
+        self.pill = tk.Label(cardpad, text="● 확인 중", font=(FONT, 9, "bold"), bg=SOFT[WAIT], fg=WAIT,
+                             padx=px(10), pady=px(3))
+        self.pill.pack(anchor="w")
         self.phase = tk.StringVar(value="준비 중…")
-        self.headline = tk.Label(cardpad, textvariable=self.phase, font=(FONT, 16, "bold"),
+        self.headline = tk.Label(cardpad, textvariable=self.phase, font=(FONT, 15, "bold"),
                                  bg=CARD, fg=INK, anchor="w", justify="left")
-        self.wrap(self.headline).pack(fill="x", pady=(5, 0))
+        self.wrap(self.headline).pack(fill="x", pady=(10, 0))
         checks = ttk.Frame(cardpad, style="Card.TFrame")
-        checks.pack(fill="x", pady=(16, 18))
+        checks.pack(fill="x", pady=(14, 18))
         self.check_rows = {}
         for key, title in (("converter", "PDF 변환기"), ("printer", "SayScore PDF 프린터"), ("receiver", "인쇄 받기")):
             row = ttk.Frame(checks, style="Card.TFrame")
-            row.pack(fill="x", pady=3)
-            dot = tk.Label(row, text="●", font=(FONT, 11), bg=CARD, fg=WAIT, width=2)
+            row.pack(fill="x", pady=2)
+            dot = tk.Label(row, text="●", font=(FONT, 9), bg=CARD, fg=WAIT, width=2)
             dot.pack(side="left")
             ttk.Label(row, text=title, style="Card.TLabel", width=18, font=(FONT, 10, "bold")).pack(side="left")
             text = tk.StringVar(value="확인 중…")
             self.wrap(ttk.Label(row, textvariable=text, style="CardMuted.TLabel")).pack(side="left", fill="x", expand=True)
             self.check_rows[key] = (dot, text)
-        self.primary = ttk.Button(cardpad, text="PDF 폴더 열기", style="Primary.TButton", command=self.primary_action)
+        self.primary = GradientButton(cardpad, text="PDF 폴더 열기", command=self.primary_action,
+                                      font=(FONT, 12, "bold"), scale=scale)
         self.primary.pack(anchor="w")
 
         self.status = tk.StringVar(value=self.address_change_notice or "시작 중…")
@@ -399,7 +500,7 @@ class App:
         head.pack(fill="x", pady=(14, 6))
         ttk.Label(head, text="최근 PDF", font=(FONT, 12, "bold")).pack(side="left")
         ttk.Label(head, text="  두 번 클릭하면 열립니다", style="Muted.TLabel").pack(side="left")
-        table = ttk.Frame(box)
+        table = tk.Frame(box, bg=CARD, highlightbackground=LINE, highlightcolor=LINE, highlightthickness=1, bd=0)
         table.pack(fill="both", expand=True)
         self.tree = ttk.Treeview(table, columns=("time", "state", "file", "detail"), show="headings",
                                  selectmode="browse", height=4)
@@ -411,6 +512,7 @@ class App:
         self.tree.configure(yscrollcommand=scroll.set)
         self.tree.pack(side="left", fill="both", expand=True)
         scroll.pack(side="right", fill="y")
+        self.tree.tag_configure("failed", foreground=BAD)
         self.tree.bind("<<TreeviewSelect>>", self.selected)
         self.tree.bind("<Double-1>", self.open_selected)
         self.detail = tk.StringVar(value="")
@@ -448,25 +550,21 @@ class App:
         return label
 
     def _brand_mark(self, parent, size):
-        canvas = tk.Canvas(parent, width=size, height=size, bg=BG, highlightthickness=0, bd=0)
-        radius = size * 0.3
-
-        def rounded(x0, y0, x1, y1, fill):
-            points = [x0 + radius, y0, x1 - radius, y0, x1, y0, x1, y0 + radius,
-                      x1, y1 - radius, x1, y1, x1 - radius, y1, x0 + radius, y1,
-                      x0, y1, x0, y1 - radius, x0, y0 + radius, x0, y0]
-            canvas.create_polygon(points, smooth=True, fill=fill, outline=fill)
-
-        rounded(size * 0.16, size * 0.16, size, size, MINT)
-        rounded(0, 0, size * 0.84, size * 0.84, ACCENT)
-        canvas.create_oval(size * 0.28, size * 0.28, size * 0.5, size * 0.5,
-                           fill="#ffffff", outline="#ffffff")
-        return canvas
+        # The 256px app icon, shrunk by an integer factor (Tk has no smooth scaling).
+        try:
+            image = tk.PhotoImage(file=str(Path(__file__).with_name("assets") / "sayscore.png"))
+            self._brand_image = image.subsample(max(1, round(image.width() / size)))
+            return tk.Label(parent, image=self._brand_image, bg=BG, bd=0)
+        except tk.TclError:
+            return tk.Frame(parent, width=size, height=size, bg=ACCENT)
 
     def set_check(self, key, state, text):
         dot, variable = self.check_rows[key]
         dot.configure(fg={"ok": GOOD, "wait": WAIT, "bad": BAD}[state])
         variable.set(text)
+
+    def set_pill(self, text, color):
+        self.pill.configure(text=f"● {text}", fg=color, bg=SOFT[color])
 
     def update_overview(self):
         if not hasattr(self, "check_rows"):
@@ -507,10 +605,17 @@ class App:
         elif not receiving:
             headline, button, enabled = "인쇄 받기가 멈춰 있습니다.", "인쇄 받기 시작", True
         else:
-            headline, button, enabled = "준비 완료 · 인쇄할 때 프린터로 'SayScore PDF'를 선택하세요.", "PDF 폴더 열기", True
+            headline, button, enabled = "인쇄할 때 프린터로 'SayScore PDF'를 선택하세요.", "PDF 폴더 열기", True
         if self.phase.get() != headline and not self.phase.get().startswith("새 PDF"):
             self.phase.set(headline)
-        self.headline.configure(fg=INK if self.route_ready and receiving else (WAIT if self.pending_setup else BAD))
+        if self.pending_setup:
+            self.set_pill("설정 중", WAIT)
+        elif not self.route_ready:
+            self.set_pill("설정 필요", BAD)
+        elif not receiving:
+            self.set_pill("일시 중지", WAIT)
+        else:
+            self.set_pill("준비 완료", GOOD)
         self.primary.configure(text=button, state="normal" if enabled else "disabled")
 
     def primary_action(self):
@@ -887,10 +992,11 @@ class App:
                 name = "인쇄 작업"
             values = (time.strftime("%m-%d %H:%M", time.localtime(created)),
                       LABELS.get(event["state"], event["state"]), name, event.get("detail", ""))
+            tags = (event["state"],)
             if self.tree.exists(job_id):
-                self.tree.item(job_id, values=values)
+                self.tree.item(job_id, values=values, tags=tags)
             else:
-                self.tree.insert("", 0, iid=job_id, values=values)
+                self.tree.insert("", 0, iid=job_id, values=values, tags=tags)
             if history:
                 continue
             if event["state"] == "completed":
