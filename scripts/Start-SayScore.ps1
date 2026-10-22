@@ -1,9 +1,11 @@
 ﻿[CmdletBinding()]
-param([switch]$Check, [switch]$NoShortcut)
+param([switch]$Check, [switch]$NoShortcut, [switch]$Simple)
 
 $ErrorActionPreference = 'Stop'
 $project = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $entry = Join-Path $project 'start.pyw'
+
+$modeFile = Join-Path $env:LOCALAPPDATA 'SayScore PDF\mode.txt'
 
 function Show-Error([string]$Message) {
     try {
@@ -69,9 +71,26 @@ try {
         return
     }
     $data = Get-DataDirectory
-    $relay = & (Join-Path $PSScriptRoot 'Ensure-SayScoreRelay.ps1') -DataDirectory $data
-    if (-not $relay -or -not $relay.RelayAddress) {
-        throw '프린터 네트워크 중계기를 준비하지 못했습니다.'
+    if (-not $Simple) {
+        try {
+            $relay = & (Join-Path $PSScriptRoot 'Ensure-SayScoreRelay.ps1') -DataDirectory $data
+            if (-not $relay -or -not $relay.RelayAddress) { throw '프린터 네트워크 중계기를 준비하지 못했습니다.' }
+            Remove-Item -LiteralPath $modeFile -Force -ErrorAction SilentlyContinue
+        } catch {
+            # Not saved as the user's choice: a pending restart or a BIOS change may fix this.
+            Add-Type -AssemblyName System.Windows.Forms
+            $answer = [Windows.Forms.MessageBox]::Show(
+                ("권장 모드(WSL 2 중계)를 시작하지 못했습니다.`n$($_.Exception.Message)`n`n" +
+                 "간편 모드로 바로 사용할까요?`n`n⚠ 간편 모드에서는 프린터가 이 PC 자신의 주소로 연결됩니다. " +
+                 "일부 프로그램이나 웹사이트는 이를 가상 프린터로 인식해 인쇄를 막을 수 있습니다."),
+                'SayScore PDF', 'YesNo', 'Warning')
+            if ($answer -ne 'Yes') { exit 2 }
+            $Simple = $true
+        }
+    }
+    if ($Simple) {
+        # Without relay state the app listens on, and points the printer at, this PC's own address.
+        Remove-Item -LiteralPath (Join-Path $data 'relay-runtime.json') -Force -ErrorAction SilentlyContinue
     }
     if (-not $NoShortcut) {
         try {

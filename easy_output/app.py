@@ -491,6 +491,14 @@ class App:
                                       font=(FONT, 12, "bold"), scale=scale)
         self.primary.pack(anchor="w")
 
+        # Shown only in simple mode (no WSL relay), where the printer targets this PC's own address.
+        self.simple_banner = tk.Label(
+            box, text="⚠ 간편 모드 · 프린터가 이 PC 자신의 주소로 연결되어 있어, 일부 프로그램이나 웹사이트는 "
+                      "가상 프린터로 인식해 인쇄를 막을 수 있습니다. 그런 경우 더보기 → '권장 모드 설치'를 이용하세요 "
+                      "(재부팅 필요).",
+            font=(FONT, 9), bg=SOFT[WAIT], fg="#7a4f0f", anchor="w", justify="left", padx=px(12), pady=px(8))
+        self.wrap(self.simple_banner)
+        self.banner_anchor = card
         self.status = tk.StringVar(value=self.address_change_notice or "시작 중…")
         self.route = tk.StringVar(value="")
         self.health_label = tk.StringVar(value="Windows 프린터 상태: 조회 대기")
@@ -533,6 +541,7 @@ class App:
         menu.add_command(label="프린터 다시 설정", command=self.setup_printer)
         menu.add_command(label="수신 중지/시작", command=self.toggle_engine)
         menu.add_command(label="연결 설정 (고급)", command=self.settings)
+        menu.add_command(label="권장 모드 설치 (WSL 2, 재부팅 필요)", command=self.install_recommended_mode)
         menu.add_separator()
         menu.add_command(label="사이트 오류 안내", command=self.site_help)
         menu.add_command(label="진단 내보내기", command=self.export_diagnostics)
@@ -565,6 +574,23 @@ class App:
 
     def set_pill(self, text, color):
         self.pill.configure(text=f"● {text}", fg=color, bg=SOFT[color])
+
+    def install_recommended_mode(self):
+        if self.relay_address:
+            messagebox.showinfo("권장 모드", "이미 권장 모드(WSL 2 중계)로 실행 중입니다.", parent=self.root)
+            return
+        if not messagebox.askyesno(
+                "권장 모드 설치",
+                "Windows 기능(WSL 2)을 설치합니다. 관리자 확인과 인터넷 연결이 필요하며, 설치 후 재부팅해야 합니다.\n\n"
+                "재부팅 후 SayScore PDF를 다시 실행하면 권장 모드로 바뀌고, 프린터 연결도 자동으로 다시 설정됩니다.\n\n"
+                "계속할까요?", parent=self.root):
+            return
+        try:
+            subprocess.Popen(["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden",
+                              "-File", str(PROJECT / "scripts" / "Bootstrap-SayScore.ps1"), "-InstallWsl"],
+                             creationflags=NO_WINDOW)
+        except OSError as exc:
+            messagebox.showerror("권장 모드 설치", f"설치를 시작하지 못했습니다: {exc}", parent=self.root)
 
     def update_overview(self):
         if not hasattr(self, "check_rows"):
@@ -608,6 +634,10 @@ class App:
             headline, button, enabled = "인쇄할 때 프린터로 'SayScore PDF'를 선택하세요.", "PDF 폴더 열기", True
         if self.phase.get() != headline and not self.phase.get().startswith("새 PDF"):
             self.phase.set(headline)
+        if self.relay_address or sys.platform != "win32":
+            self.simple_banner.pack_forget()
+        elif not self.simple_banner.winfo_manager():
+            self.simple_banner.pack(fill="x", pady=(10, 0), after=self.banner_anchor)
         if self.pending_setup:
             self.set_pill("설정 중", WAIT)
         elif not self.route_ready:

@@ -55,70 +55,9 @@ Name: "{autodesktop}\SayScore PDF"; Filename: "{app}\SayScorePDF.exe"; Tasks: de
 Name: "{commonstartup}\SayScore PDF"; Filename: "{app}\SayScorePDF.exe"; Tasks: autostart
 
 [Run]
-Filename: "{app}\SayScorePDF.exe"; Description: "SayScore PDF 실행"; Flags: postinstall nowait skipifsilent runasoriginaluser; Check: not WslRestartPending
+Filename: "{app}\SayScorePDF.exe"; Description: "SayScore PDF 실행"; Flags: postinstall nowait skipifsilent runasoriginaluser
 
 [UninstallRun]
 Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; \
   Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\scripts\Uninstall-SayScore.ps1"" -InstallDirectory ""{app}"""; \
   Flags: runhidden waituntilterminated; RunOnceId: "RemoveSayScore"
-
-[Code]
-var
-  RestartForWsl: Boolean;
-
-function RunHidden(const FileName, Params: String): Integer;
-var
-  Code: Integer;
-begin
-  if Exec(FileName, Params, '', SW_HIDE, ewWaitUntilTerminated, Code) then
-    Result := Code
-  else
-    Result := -1;
-end;
-
-function WslReady: Boolean;
-begin
-  // Checks wsl.exe and that both WSL optional components are enabled.
-  Result := RunHidden(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
-    '-NoProfile -ExecutionPolicy Bypass -File "' +
-    ExpandConstant('{app}\scripts\Test-WslReady.ps1') + '"') = 0;
-end;
-
-function WslRestartPending: Boolean;
-begin
-  Result := RestartForWsl;
-end;
-
-procedure InstallWsl;
-var
-  Dism, Code: Integer;
-begin
-  WizardForm.StatusLabel.Caption := '프린터 중계에 필요한 Windows 기능(WSL 2)을 설치하는 중입니다...';
-  // Only the Windows feature: no Linux distribution is installed here.
-  Code := RunHidden(ExpandConstant('{sys}\wsl.exe'), '--install --no-distribution --web-download');
-  if Code <> 0 then
-  begin
-    // Older inbox wsl.exe builds lack --no-distribution; enable the features directly.
-    Dism := RunHidden(ExpandConstant('{sys}\dism.exe'),
-      '/Online /Enable-Feature /FeatureName:Microsoft-Windows-Subsystem-Linux /All /NoRestart');
-    if (Dism = 0) or (Dism = 3010) then
-      Dism := RunHidden(ExpandConstant('{sys}\dism.exe'),
-        '/Online /Enable-Feature /FeatureName:VirtualMachinePlatform /All /NoRestart');
-    if (Dism <> 0) and (Dism <> 3010) then
-      MsgBox('WSL 2 기능을 켜지 못했습니다 (코드 ' + IntToStr(Dism) + ').' + #13#10 +
-             'BIOS/UEFI 가상화 설정 또는 조직 정책을 확인한 뒤 SayScore PDF를 다시 실행하세요.', mbError, MB_OK);
-    RunHidden(ExpandConstant('{sys}\wsl.exe'), '--update --web-download');
-  end;
-  RestartForWsl := True;
-end;
-
-procedure CurStepChanged(CurStep: TSetupStep);
-begin
-  if (CurStep = ssPostInstall) and not WslReady then
-    InstallWsl;
-end;
-
-function NeedRestart: Boolean;
-begin
-  Result := RestartForWsl;
-end;

@@ -29,6 +29,7 @@ if ($owned -and (Get-Command wsl.exe -ErrorAction SilentlyContinue)) {
     & wsl.exe --unregister $distribution 2>$null | Out-Null
 }
 if (Test-Path -LiteralPath $relayDirectory) { Remove-Item -LiteralPath $relayDirectory -Recurse -Force -ErrorAction SilentlyContinue }
+Remove-Item -LiteralPath (Join-Path $env:LOCALAPPDATA 'SayScore PDF' | Join-Path -ChildPath 'mode.txt') -Force -ErrorAction SilentlyContinue
 
 $owned = @(Get-Printer -ErrorAction SilentlyContinue | Where-Object Comment -eq $ownerComment)
 $ports = @($owned | ForEach-Object PortName | Sort-Object -Unique)

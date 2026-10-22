@@ -8,6 +8,7 @@ The Windows printer queue prints to RAW 9100 / UDP 161 on the WSL 2 address, whi
 
 - x64 prefers the bundled Samsung X4305 driver; ARM64 uses the Samsung CLX-9252/9352 ARM64 driver. Microsoft class drivers can be chosen in the app's advanced settings.
 - WSL 2 must use NAT networking (the default), not `networkingMode=mirrored`.
+- Simple mode (chosen on first launch, saved in `%LOCALAPPDATA%\SayScore PDF\mode.txt`, or offered when the relay fails) skips WSL: without `relay-runtime.json` the app listens on this PC's own private IPv4 address on 9100 and the printer port targets it directly. The app shows a warning banner in this mode. The installer itself never installs WSL; the first launch asks.
 
 ## Data
 

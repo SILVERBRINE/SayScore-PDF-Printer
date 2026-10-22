@@ -18,16 +18,19 @@ A free Windows printer that saves everything you print as a PDF
 
 1. Download the installer with the **Download for Windows** button above and run it.
    - If Windows shows "Windows protected your PC", choose **More info → Run anyway**.
-   - Restart if the installer asks you to.
-2. On first launch, choose **Yes** in the administrator prompt.
+2. On first launch, choose how it connects.
+   - **Recommended mode** installs the Windows WSL 2 feature. Least likely to be detected as a virtual printer, but needs one restart.
+   - **Simple mode** works right away with no restart. Choose it on PCs that reset on restart, such as internet cafés.
+     ⚠ The printer points at this PC's own address, so some programs or websites may treat it as a virtual printer and refuse to print.
+   - Choose **Yes** in the administrator prompt.
 3. Print from any app and choose the **SayScore PDF** printer.
 4. Open your PDFs with the app's **PDF 폴더 열기** (Open PDF folder) button.
 
 ## Requirements
 
 - Windows 11 (x64, ARM64) or Windows 10 22H2 or later (x64)
-- An internet connection and administrator rights for the first install
-- Virtualization enabled in BIOS/UEFI (on by default on most PCs)
+- Administrator rights (to add the printer)
+- Recommended mode only: an internet connection, virtualization enabled in BIOS/UEFI (on by default on most PCs) and one restart
 
 ## Uninstall
 

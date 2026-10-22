@@ -1,13 +1,21 @@
 ﻿[CmdletBinding()]
-param([switch]$NoShortcut)
+param([switch]$NoShortcut, [switch]$InstallWsl)
+
+# Picks how the printer reaches the app, then starts it:
+# - recommended mode: a WSL 2 relay, so the printer targets an address Windows
+#   does not own (needs the WSL 2 feature, virtualization and one restart);
+# - simple mode: the printer targets this PC's own address. No restart, but some
+#   programs may treat it as a virtual printer.
+# -InstallWsl (also used by the app's menu) installs the WSL 2 feature only.
 
 $ErrorActionPreference = 'Stop'
-$project = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
+$modeFile = Join-Path $env:LOCALAPPDATA 'SayScore PDF\mode.txt'
+$simpleWarning = ('간편 모드에서는 프린터가 이 PC 자신의 주소로 연결됩니다. ' +
+    '일부 프로그램이나 웹사이트는 이를 가상 프린터로 인식해 인쇄를 막을 수 있습니다.')
 
-function Show-Notice([string]$Message, [string]$Icon = 'Information') {
+function Show-Notice([string]$Message, [string]$Icon = 'Information', [string]$Buttons = 'OK') {
     Add-Type -AssemblyName System.Windows.Forms
-    [void][Windows.Forms.MessageBox]::Show(
-        $Message, 'SayScore PDF', 'OK', $Icon)
+    return [Windows.Forms.MessageBox]::Show($Message, 'SayScore PDF', $Buttons, $Icon)
 }
 
 function Test-Administrator {
@@ -21,50 +29,82 @@ function Test-WslReady {
     return $LASTEXITCODE -eq 0
 }
 
+# Returns why WSL 2 cannot be installed on this PC, or '' when it can.
+function Get-WslBlocker {
+    $os = Get-CimInstance Win32_OperatingSystem
+    $cpu = Get-CimInstance Win32_Processor | Select-Object -First 1
+    if ([int]$os.BuildNumber -lt 19045 -or [int]$cpu.Architecture -notin @(9, 12)) {
+        return '64비트 Windows 10 22H2(build 19045) 이상 또는 Windows 11이 필요합니다.'
+    }
+    $hypervisor = (Get-CimInstance Win32_ComputerSystem).HypervisorPresent
+    if (-not $hypervisor -and (-not $cpu.VirtualizationFirmwareEnabled -or
+            -not $cpu.SecondLevelAddressTranslationExtensions)) {
+        return 'BIOS/UEFI에서 하드웨어 가상화가 꺼져 있습니다.'
+    }
+    return ''
+}
+
+function Install-WslFeature {
+    if (-not (Test-Administrator)) {
+        $arguments = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$PSCommandPath`"", '-InstallWsl')
+        $process = Start-Process powershell.exe -Verb RunAs -ArgumentList $arguments -Wait -PassThru
+        exit $process.ExitCode
+    }
+    $blocker = Get-WslBlocker
+    if ($blocker) { throw $blocker }
+    # Only the Windows feature: no Linux distribution is installed here.
+    & wsl.exe --install --no-distribution --web-download
+    if ($LASTEXITCODE -ne 0) {
+        # Older inbox wsl.exe builds lack --no-distribution; enable the features directly.
+        & dism.exe /Online /Enable-Feature /FeatureName:Microsoft-Windows-Subsystem-Linux /All /NoRestart
+        if ($LASTEXITCODE -notin @(0, 3010)) { throw "WSL 기능을 켜지 못했습니다 (코드 $LASTEXITCODE)." }
+        & dism.exe /Online /Enable-Feature /FeatureName:VirtualMachinePlatform /All /NoRestart
+        if ($LASTEXITCODE -notin @(0, 3010)) { throw "가상 머신 플랫폼을 켜지 못했습니다 (코드 $LASTEXITCODE)." }
+        & wsl.exe --update --web-download
+    }
+    Remove-Item -LiteralPath $modeFile -Force -ErrorAction SilentlyContinue
+    [void](Show-Notice "권장 모드에 필요한 Windows 기능(WSL 2)을 설치했습니다.`n`nWindows를 재부팅한 뒤 SayScore PDF를 다시 실행하세요.")
+    exit 3010
+}
+
+function Start-App([switch]$Simple) {
+    & (Join-Path $PSScriptRoot 'Start-SayScore.ps1') -NoShortcut:$NoShortcut -Simple:$Simple
+    exit $LASTEXITCODE
+}
+
+function Save-SimpleMode {
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $modeFile) | Out-Null
+    [IO.File]::WriteAllText($modeFile, 'simple')
+}
+
 try {
-    if (-not (Test-WslReady)) {
-        $os = Get-CimInstance Win32_OperatingSystem
-        $cpu = Get-CimInstance Win32_Processor | Select-Object -First 1
-        if ([int]$os.BuildNumber -lt 19045 -or [int]$cpu.Architecture -notin @(9, 12)) {
-            throw '64비트 Windows 10 22H2(build 19045) 이상 또는 Windows 11이 필요합니다.'
-        }
-        $hypervisor = (Get-CimInstance Win32_ComputerSystem).HypervisorPresent
-        if (-not $hypervisor -and (-not $cpu.VirtualizationFirmwareEnabled -or
-                -not $cpu.SecondLevelAddressTranslationExtensions)) {
-            throw 'BIOS/UEFI에서 하드웨어 가상화와 SLAT를 켜야 합니다.'
-        }
-        if (-not (Test-Administrator)) {
-            $arguments = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$PSCommandPath`"")
-            $process = Start-Process powershell.exe -Verb RunAs -ArgumentList $arguments -Wait -PassThru
-            exit $process.ExitCode
-        }
-        Add-Type -AssemblyName System.Windows.Forms
-        $answer = [Windows.Forms.MessageBox]::Show(
-            "프린터 중계에 필요한 Windows 기능(WSL 2)을 설치합니다.`n`nLinux 배포판이나 다른 프로그램은 설치하지 않습니다. 인터넷 연결이 필요하며, 설치 후 재부팅해야 할 수 있습니다.`n`n계속할까요?",
-            'SayScore PDF · 새 PC 준비', 'YesNo', 'Question')
+    if ($InstallWsl) { Install-WslFeature }
+    if (Test-WslReady) { Start-App }
+    if ((Test-Path -LiteralPath $modeFile) -and (Get-Content -LiteralPath $modeFile -Raw).Trim() -eq 'simple') {
+        Start-App -Simple
+    }
+
+    $blocker = Get-WslBlocker
+    if ($blocker) {
+        $answer = Show-Notice ("이 PC에서는 권장 모드(WSL 2)를 쓸 수 없습니다.`n$blocker`n`n" +
+            "대신 간편 모드로 바로 사용할까요?`n`n⚠ $simpleWarning") 'Warning' 'YesNo'
         if ($answer -ne 'Yes') { exit 2 }
-
-        & wsl.exe --install --no-distribution --web-download
-        if ($LASTEXITCODE -ne 0) {
-            # Older inbox wsl.exe builds lack --no-distribution; enable the features directly.
-            & dism.exe /Online /Enable-Feature /FeatureName:Microsoft-Windows-Subsystem-Linux /All /NoRestart
-            if ($LASTEXITCODE -notin @(0, 3010)) { throw "WSL 기능을 켜지 못했습니다 (코드 $LASTEXITCODE)." }
-            & dism.exe /Online /Enable-Feature /FeatureName:VirtualMachinePlatform /All /NoRestart
-            if ($LASTEXITCODE -notin @(0, 3010)) { throw "가상 머신 플랫폼을 켜지 못했습니다 (코드 $LASTEXITCODE)." }
-            & wsl.exe --update --web-download
-        }
-        Show-Notice "WSL 2 기능을 설치했습니다.`n`nWindows를 재부팅한 뒤 SayScore PDF를 다시 실행하세요."
-        exit 3010
+        Save-SimpleMode
+        Start-App -Simple
     }
 
-    try {
-        & (Join-Path $PSScriptRoot 'Start-SayScore.ps1') -NoShortcut:$NoShortcut
-    } catch {
-        Show-Notice ("필수 구성요소 설치 후 Windows를 재부팅하고 SayScore PDF를 다시 실행하세요.`n`n" +
-                     $_.Exception.Message) 'Warning'
-        exit 3010
+    $answer = Show-Notice ("SayScore PDF를 어떤 방식으로 사용할까요?`n`n" +
+        "[예] 권장 모드`nWindows 기능(WSL 2)을 설치합니다. 가상 프린터로 인식될 가능성이 가장 낮지만, " +
+        "인터넷 연결과 재부팅이 필요합니다. Linux 배포판이나 다른 프로그램은 설치하지 않습니다.`n`n" +
+        "[아니요] 간편 모드`n재부팅 없이 바로 사용합니다.`n⚠ $simpleWarning`n`n" +
+        "PC방처럼 재부팅하면 초기화되는 PC에서는 간편 모드를 고르세요.") 'Question' 'YesNoCancel'
+    if ($answer -eq 'Yes') { Install-WslFeature }
+    if ($answer -eq 'No') {
+        Save-SimpleMode
+        Start-App -Simple
     }
+    exit 2
 } catch {
-    Show-Notice ("SayScore PDF를 준비하지 못했습니다.`n`n" + $_.Exception.Message) 'Error'
+    [void](Show-Notice ("SayScore PDF를 준비하지 못했습니다.`n`n" + $_.Exception.Message) 'Error')
     exit 1
 }
