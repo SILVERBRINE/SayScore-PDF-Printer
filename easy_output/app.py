@@ -94,6 +94,15 @@ def relay_route(data: Path, addresses: list[str]) -> tuple[str, str]:
     except (OSError, ValueError, TypeError, AttributeError):
         return "", ""
 
+def relay_peer(data: Path) -> str:
+    """The simple-mode relay's stand-in sender, which the engine must accept."""
+    try:
+        state = json.loads((data / "relay-runtime.json").read_text(encoding="utf-8"))
+        peer = ipaddress.ip_address(str(state.get("peer_address") or ""))
+    except (OSError, ValueError, TypeError, AttributeError):
+        return ""
+    return str(peer) if state.get("mode") == "tun" and peer.version == 4 and peer.is_private else ""
+
 def snmp_identity_from_config(config: dict, inventory: dict | None = None) -> dict:
     name = config.get("queue_name") or QUEUE_NAME
     driver = (owned_queue_driver(inventory) if inventory else None) or name
@@ -825,7 +834,8 @@ class App:
                             ghostscript=self.config["ghostscript"], ghostpcl=self.config["ghostpcl"],
                             receive_rate=self.config.get("receive_rate", DEFAULT_RECEIVE_RATE),
                             snmp_enabled=bool(self.config.get("snmp_enabled")),
-                            snmp_identity=snmp_identity_from_config(self.config, self.inventory))
+                            snmp_identity=snmp_identity_from_config(self.config, self.inventory),
+                            trusted_peers=tuple(filter(None, [relay_peer(self.data)])))
             if self.config["host"] not in local_ipv4_addresses():
                 raise ValueError("사용 가능한 사설 IPv4 주소가 없습니다. 네트워크(Wi-Fi/유선)에 연결한 뒤 다시 실행하세요.")
             snmp_port = RELAY_CAPTURE_SNMP_PORT if self.relay_address else 161

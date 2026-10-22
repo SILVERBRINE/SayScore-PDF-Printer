@@ -36,8 +36,12 @@ class Engine:
 
     def __init__(self, root: Path, emit, ghostscript: str | None = None,
                  ghostpcl: str | None = None, *, receive_rate: int = 0,
-                 snmp_enabled: bool = False, snmp_identity: dict | None = None):
+                 snmp_enabled: bool = False, snmp_identity: dict | None = None,
+                 trusted_peers: tuple[str, ...] = ()):
         self.receive_rate = max(0, int(receive_rate))
+        # Addresses that are not this PC's but reach it only through SayScore's own
+        # relay adapter (the simple-mode stand-in peer).
+        self.trusted_peers = frozenset(trusted_peers)
         self.snmp_enabled = snmp_enabled
         self.snmp_identity = dict(snmp_identity or {})
         self._snmp = None
@@ -296,7 +300,7 @@ class Engine:
                 continue
             except OSError:
                 break
-            if not is_local_peer(peer[0]):
+            if peer[0] not in self.trusted_peers and not is_local_peer(peer[0]):
                 self._log_communication("tcp-connections.jsonl", {
                     "event": "rejected", "reason": "non-local-peer",
                     "peer_ip": peer[0], "peer_port": peer[1],

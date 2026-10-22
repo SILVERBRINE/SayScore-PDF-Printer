@@ -39,7 +39,8 @@ if (-not $state) {
 }
 
 $runtime = [ordered]@{ schema = 3; mode = 'tun'; capture_address = $state.capture_address
-    relay_address = $state.relay_address; capture_raw_port = 19100; capture_snmp_port = 1161
+    relay_address = $state.relay_address; peer_address = $state.peer_address
+    capture_raw_port = 19100; capture_snmp_port = 1161
     updated = [DateTimeOffset]::Now.ToUnixTimeSeconds() }
 New-Item -ItemType Directory -Force -Path $DataDirectory | Out-Null
 $path = Join-Path $DataDirectory 'relay-runtime.json'
