@@ -17,7 +17,7 @@ $python = Join-Path $project ("vendor\python-{0}\3.13.9\pythonw.exe" -f $(if ($a
 
 $protected = @($env:ProgramFiles, ${env:ProgramFiles(x86)}) | Where-Object { $_ } |
     Where-Object { $project.StartsWith($_.TrimEnd('\') + '\', [StringComparison]::OrdinalIgnoreCase) }
-if (-not $protected) { throw '간편 모드는 설치 프로그램으로 설치한 SayScore PDF에서만 사용할 수 있습니다.' }
+if (-not $protected) { throw '가상 어댑터 방식은 설치 프로그램으로 설치한 SayScore PDF에서만 사용할 수 있습니다.' }
 if (-not (Test-Path -LiteralPath $python)) { throw "Python 런타임이 없습니다: $python" }
 if (-not (Test-Path -LiteralPath (Join-Path $project "vendor\wintun\$arch\wintun.dll"))) {
     throw 'wintun.dll이 없습니다. SayScore PDF를 다시 설치하세요.'

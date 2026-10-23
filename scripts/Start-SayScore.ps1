@@ -5,6 +5,11 @@ $ErrorActionPreference = 'Stop'
 $project = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $entry = Join-Path $project 'start.pyw'
 
+# Tells SayScorePDF.exe's startup window what is happening (no-op without it).
+function Set-StartupStatus([string]$Text) {
+    if ($env:SAYSCORE_PROGRESS) { try { [IO.File]::WriteAllText($env:SAYSCORE_PROGRESS, $Text) } catch { } }
+}
+
 function Show-Error([string]$Message) {
     try {
         Add-Type -AssemblyName System.Windows.Forms
@@ -55,7 +60,12 @@ function Find-PythonW {
 
 try {
     if (-not (Test-Path -LiteralPath $entry -PathType Leaf)) { throw "앱 시작 파일이 없습니다: $entry" }
-    if (-not $Check) {
+    # Only the portable ZIP carries "downloaded from the internet" marks; the installed
+    # copy has none, and scanning its ~2,500 files slowed every start.
+    $installed = @($env:ProgramFiles, ${env:ProgramFiles(x86)}) | Where-Object { $_ } |
+        Where-Object { $project.StartsWith($_.TrimEnd('\') + '\', [StringComparison]::OrdinalIgnoreCase) }
+    if (-not $Check -and -not $installed) {
+        Set-StartupStatus '압축을 푼 파일을 확인하는 중…'
         Get-ChildItem -LiteralPath $project -Recurse -File -ErrorAction SilentlyContinue |
             Unblock-File -ErrorAction SilentlyContinue
     }
@@ -77,8 +87,8 @@ try {
             # Not saved as the user's choice: a pending restart or a BIOS change may fix this.
             Add-Type -AssemblyName System.Windows.Forms
             $answer = [Windows.Forms.MessageBox]::Show(
-                ("권장 모드(WSL 2 중계)를 시작하지 못했습니다.`n$($_.Exception.Message)`n`n" +
-                 "간편 모드로 바로 사용할까요? 재부팅 없이 앱 전용 가상 네트워크 어댑터를 추가합니다."),
+                ("WSL 방식을 시작하지 못했습니다.`n$($_.Exception.Message)`n`n" +
+                 "이번에는 기본 방식(가상 어댑터)으로 시작할까요? 재부팅은 필요 없습니다."),
                 'SayScore PDF', 'YesNo', 'Warning')
             if ($answer -ne 'Yes') { exit 2 }
             $Simple = $true
@@ -87,7 +97,7 @@ try {
     if ($Simple) {
         # A Wintun adapter stands in for the WSL VM: the printer address is still not this PC's own.
         $relay = & (Join-Path $PSScriptRoot 'Ensure-TunRelay.ps1') -DataDirectory $data
-        if (-not $relay -or -not $relay.RelayAddress) { throw '간편 모드 중계를 준비하지 못했습니다.' }
+        if (-not $relay -or -not $relay.RelayAddress) { throw '가상 어댑터 중계를 준비하지 못했습니다.' }
     }
     if (-not $NoShortcut) {
         try {
@@ -110,6 +120,7 @@ try {
             }
         } catch { }  # A missing shortcut never blocks the app.
     }
+    Set-StartupStatus '앱 화면을 여는 중…'
     Start-Process -FilePath $pythonw -ArgumentList ('"' + $entry + '" --data "' + $data.TrimEnd('\') + '"') `
         -WorkingDirectory $project -ErrorAction Stop
 } catch {

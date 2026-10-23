@@ -504,8 +504,7 @@ class App:
         # Shown only without any relay (e.g. the portable ZIP), where the printer targets this PC's own address.
         self.simple_banner = tk.Label(
             box, text="⚠ 프린터 중계 없이 실행 중 · 프린터가 이 PC 자신의 주소로 연결되어 있어, 일부 프로그램이나 "
-                      "웹사이트는 가상 프린터로 인식해 인쇄를 막을 수 있습니다. 아래 '연결 방식'에서 권장 또는 간편 모드를 "
-                      "고르세요.",
+                      "웹사이트는 가상 프린터로 인식해 인쇄를 막을 수 있습니다. 아래 '연결 방식'에서 방식을 고르세요.",
             font=(FONT, 9), bg=SOFT[WAIT], fg="#7a4f0f", anchor="w", justify="left", padx=px(12), pady=px(8))
         self.wrap(self.simple_banner)
         self.banner_anchor = card
@@ -544,20 +543,12 @@ class App:
         ttk.Button(footer, text="파일 가져오기", command=self.import_file).pack(side="left", padx=6)
         more = ttk.Menubutton(footer, text="더보기")
         menu = tk.Menu(more, tearoff=False, font=(FONT, 10))
-        menu.add_command(label="선택한 PDF 열기", command=self.open_result)
         menu.add_command(label="선택 작업 다시 시도", command=self.retry)
-        menu.add_command(label="작업 로그 열기", command=self.open_job_folder)
-        menu.add_separator()
         menu.add_command(label="프린터 다시 설정", command=self.setup_printer)
-        menu.add_command(label="수신 중지/시작", command=self.toggle_engine)
         menu.add_command(label="연결 설정 (고급)", command=self.settings)
-        menu.add_command(label="권장 모드 설치 (WSL 2, 재부팅 필요)", command=self.install_recommended_mode)
         menu.add_separator()
-        menu.add_command(label="사이트 오류 안내", command=self.site_help)
         menu.add_command(label="진단 내보내기", command=self.export_diagnostics)
-        menu.add_separator()
-        menu.add_command(label="프로젝트 페이지 (GitHub)", command=lambda: webbrowser.open(PROJECT_URL))
-        menu.add_command(label="후원하기 (GitHub Sponsors)", command=lambda: webbrowser.open(SPONSOR_URL))
+        menu.add_command(label="도움말 · 새 버전 (GitHub)", command=lambda: webbrowser.open(PROJECT_URL))
         more["menu"] = menu
         more.pack(side="right")
         if sys.platform == "win32":
@@ -565,7 +556,7 @@ class App:
             toggle = tk.Frame(footer, bg=BG)
             toggle.pack(side="right", padx=(0, 10))
             ttk.Label(toggle, text="연결 방식", style="Muted.TLabel").pack(side="left", padx=(0, 6))
-            for mode, label in (("wsl", "권장 · WSL"), ("simple", "간편 · 가상 어댑터")):
+            for mode, label in (("simple", "기본 · 가상 어댑터"), ("wsl", "WSL")):
                 button = tk.Label(toggle, text=label, font=(FONT, 9, "bold"), padx=px(10), pady=px(6),
                                   cursor="hand2")
                 button.pack(side="left")
@@ -619,43 +610,32 @@ class App:
     def switch_mode(self, mode: str):
         if mode == self.current_mode():
             return
-        name = {"wsl": "권장 모드 (WSL 2 중계)", "simple": "간편 모드 (가상 네트워크 어댑터)"}[mode]
+        name = {"wsl": "WSL 방식", "simple": "기본 방식 (가상 어댑터)"}[mode]
+        first_wsl = ("\n\nWSL 2가 아직 없으면 Windows 기능을 한 번 설치하며, 인터넷 연결과 재부팅이 필요합니다."
+                     if mode == "wsl" else "")
         if not messagebox.askyesno(
                 "연결 방식 전환",
-                f"{name}로 바꾸고 SayScore PDF를 다시 시작합니다.\n\n"
-                "다시 시작한 뒤 프린터 연결을 새 방식에 맞게 다시 설정하라는 안내가 나오면 '예'를 누르세요.\n\n"
+                f"{name}으로 바꾸고 SayScore PDF를 다시 시작합니다.{first_wsl}\n\n"
+                "다시 시작한 뒤 프린터를 다시 연결하라는 안내가 나오면 '예'를 누르세요.\n\n"
                 "계속할까요?", parent=self.root):
             return
         try:
             mode_file = Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "SayScore PDF" / "mode.txt"
             mode_file.parent.mkdir(parents=True, exist_ok=True)
             mode_file.write_text(mode, encoding="ascii")
-            bootstrap = PROJECT / "scripts" / "Bootstrap-SayScore.ps1"
-            # Wait for this window to close so the new instance does not see it as already running.
-            subprocess.Popen(["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden",
-                              "-Command", f"Start-Sleep -Seconds 3; & '{bootstrap}' -NoShortcut"],
-                             creationflags=NO_WINDOW)
+            launcher = PROJECT / "SayScorePDF.exe"
+            if launcher.is_file():
+                # /restart waits for this app to exit, then starts it with the startup window.
+                subprocess.Popen([str(launcher), "/restart"], creationflags=NO_WINDOW)
+            else:
+                bootstrap = PROJECT / "scripts" / "Bootstrap-SayScore.ps1"
+                subprocess.Popen(["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle",
+                                  "Hidden", "-Command", f"Start-Sleep -Seconds 3; & '{bootstrap}' -NoShortcut"],
+                                 creationflags=NO_WINDOW)
         except OSError as exc:
             messagebox.showerror("연결 방식 전환", f"전환하지 못했습니다: {exc}", parent=self.root)
             return
         self.close()
-
-    def install_recommended_mode(self):
-        if self.relay_address:
-            messagebox.showinfo("권장 모드", "이미 권장 모드(WSL 2 중계)로 실행 중입니다.", parent=self.root)
-            return
-        if not messagebox.askyesno(
-                "권장 모드 설치",
-                "Windows 기능(WSL 2)을 설치합니다. 관리자 확인과 인터넷 연결이 필요하며, 설치 후 재부팅해야 합니다.\n\n"
-                "재부팅 후 SayScore PDF를 다시 실행하면 권장 모드로 바뀌고, 프린터 연결도 자동으로 다시 설정됩니다.\n\n"
-                "계속할까요?", parent=self.root):
-            return
-        try:
-            subprocess.Popen(["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden",
-                              "-File", str(PROJECT / "scripts" / "Bootstrap-SayScore.ps1"), "-InstallWsl"],
-                             creationflags=NO_WINDOW)
-        except OSError as exc:
-            messagebox.showerror("권장 모드 설치", f"설치를 시작하지 못했습니다: {exc}", parent=self.root)
 
     def update_overview(self):
         if not hasattr(self, "check_rows"):
@@ -881,9 +861,6 @@ class App:
                        or "프린터 연결 준비 필요 · '프린터 자동 설정'으로 전용 SayScore PDF 큐를 준비하세요."))
         self.update_overview()
         return ready
-
-    def site_help(self):
-        messagebox.showinfo("사이트 오류 안내 · 등록되지 않은 프린터", SITE_REGISTRATION_HELP, parent=self.root)
 
     def check_network(self):
         if self.engine and self.engine.host:
@@ -1131,11 +1108,6 @@ class App:
         target = self.data / "output"
         target.mkdir(exist_ok=True)
         open_path(target)
-
-    def open_result(self):
-        job = self.selection()
-        if job and job.get("output") and Path(job["output"]).exists():
-            open_path(Path(job["output"]))
 
     def open_job_folder(self):
         job = self.selection()

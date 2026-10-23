@@ -1,16 +1,20 @@
 ﻿[CmdletBinding()]
 param([switch]$NoShortcut, [switch]$InstallWsl)
 
-# Picks how the printer reaches the app, then starts it:
-# - recommended mode: a WSL 2 relay, so the printer targets an address Windows
-#   does not own (needs the WSL 2 feature, virtualization and one restart);
-# - simple mode: a Wintun adapter (easy_output.tunrelay) plays the same role
-#   without a VM, so no restart or virtualization is needed.
-# -InstallWsl (also used by the app's menu) installs the WSL 2 feature only.
+# Starts the app with the printer relay the user chose. Either way the printer
+# targets an address Windows does not own, so it is not seen as a virtual printer.
+# - default ('simple' in mode.txt): a Wintun adapter (easy_output.tunrelay);
+#   no restart or virtualization needed;
+# - WSL ('wsl', chosen with the app's toggle): a WSL 2 relay. The WSL 2 feature
+#   is installed the first time it is chosen (needs a restart).
+# -InstallWsl is the elevated half of that install.
 
 $ErrorActionPreference = 'Stop'
 $modeFile = Join-Path $env:LOCALAPPDATA 'SayScore PDF\mode.txt'
-$simpleNote = '앱 전용 가상 네트워크 어댑터(Wintun)를 추가합니다. 관리자 확인이 필요하며, 재부팅은 필요 없습니다.'
+# Tells SayScorePDF.exe's startup window what is happening (no-op without it).
+function Set-StartupStatus([string]$Text) {
+    if ($env:SAYSCORE_PROGRESS) { try { [IO.File]::WriteAllText($env:SAYSCORE_PROGRESS, $Text) } catch { } }
+}
 
 function Show-Notice([string]$Message, [string]$Icon = 'Information', [string]$Buttons = 'OK') {
     Add-Type -AssemblyName System.Windows.Forms
@@ -44,6 +48,7 @@ function Get-WslBlocker {
 }
 
 function Install-WslFeature {
+    Save-Mode 'wsl'
     if (-not (Test-Administrator)) {
         $arguments = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$PSCommandPath`"", '-InstallWsl')
         $process = Start-Process powershell.exe -Verb RunAs -ArgumentList $arguments -Wait -PassThru
@@ -61,8 +66,7 @@ function Install-WslFeature {
         if ($LASTEXITCODE -notin @(0, 3010)) { throw "가상 머신 플랫폼을 켜지 못했습니다 (코드 $LASTEXITCODE)." }
         & wsl.exe --update --web-download
     }
-    Remove-Item -LiteralPath $modeFile -Force -ErrorAction SilentlyContinue
-    [void](Show-Notice "권장 모드에 필요한 Windows 기능(WSL 2)을 설치했습니다.`n`nWindows를 재부팅한 뒤 SayScore PDF를 다시 실행하세요.")
+    [void](Show-Notice "WSL 방식에 필요한 Windows 기능(WSL 2)을 설치했습니다.`n`nWindows를 재부팅한 뒤 SayScore PDF를 다시 실행하세요.")
     exit 3010
 }
 
@@ -71,38 +75,34 @@ function Start-App([switch]$Simple) {
     exit $LASTEXITCODE
 }
 
-function Save-SimpleMode {
+function Save-Mode([string]$Mode) {
     New-Item -ItemType Directory -Force -Path (Split-Path -Parent $modeFile) | Out-Null
-    [IO.File]::WriteAllText($modeFile, 'simple')
+    [IO.File]::WriteAllText($modeFile, $Mode)
 }
 
 try {
     if ($InstallWsl) { Install-WslFeature }
-    # mode.txt holds the user's choice ('simple' or 'wsl'); the app's mode toggle writes it too.
+    # mode.txt holds the user's choice ('simple' or 'wsl'); the app's toggle writes it.
     $mode = if (Test-Path -LiteralPath $modeFile) { (Get-Content -LiteralPath $modeFile -Raw).Trim() } else { '' }
-    if ($mode -eq 'simple') { Start-App -Simple }
-    if (Test-WslReady) { Start-App }
+    # Up to v0.3.0 WSL was the default: keep PCs that already use the WSL relay on it.
+    if (-not $mode -and (Test-Path -LiteralPath (Join-Path $env:LOCALAPPDATA 'SayScore PDF\relay-wsl'))) { $mode = 'wsl' }
+    if ($mode -ne 'wsl') { Start-App -Simple }
 
+    Set-StartupStatus 'WSL 2를 확인하는 중…'
+    if (Test-WslReady) { Start-App }
+    # WSL was chosen but its Windows feature is missing: install it this once.
     $blocker = Get-WslBlocker
     if ($blocker) {
-        $answer = Show-Notice ("이 PC에서는 권장 모드(WSL 2)를 쓸 수 없습니다.`n$blocker`n`n" +
-            "대신 간편 모드로 바로 사용할까요?`n`n$simpleNote") 'Warning' 'YesNo'
-        if ($answer -ne 'Yes') { exit 2 }
-        Save-SimpleMode
+        [void](Show-Notice ("이 PC에서는 WSL 방식을 쓸 수 없어 기본 방식(가상 어댑터)으로 시작합니다.`n`n$blocker") 'Warning')
+        Save-Mode 'simple'
         Start-App -Simple
     }
-
-    $answer = Show-Notice ("SayScore PDF를 어떤 방식으로 사용할까요?`n`n" +
-        "[예] 권장 모드`nWindows 기능(WSL 2)을 설치합니다. 오래 검증된 방식이지만 " +
+    $answer = Show-Notice ("WSL 방식에 필요한 Windows 기능(WSL 2)을 설치할까요?`n`n" +
         "인터넷 연결과 재부팅이 필요합니다. Linux 배포판이나 다른 프로그램은 설치하지 않습니다.`n`n" +
-        "[아니요] 간편 모드`n재부팅 없이 바로 사용합니다. $simpleNote`n`n" +
-        "PC방처럼 재부팅하면 초기화되는 PC에서는 간편 모드를 고르세요.") 'Question' 'YesNoCancel'
+        "[아니요]를 누르면 기본 방식(가상 어댑터)으로 시작합니다.") 'Question' 'YesNo'
     if ($answer -eq 'Yes') { Install-WslFeature }
-    if ($answer -eq 'No') {
-        Save-SimpleMode
-        Start-App -Simple
-    }
-    exit 2
+    Save-Mode 'simple'
+    Start-App -Simple
 } catch {
     [void](Show-Notice ("SayScore PDF를 준비하지 못했습니다.`n`n" + $_.Exception.Message) 'Error')
     exit 1

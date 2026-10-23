@@ -275,7 +275,15 @@ if ($queueExists) {
         $changeBidi = (Get-PortSnmpEnabled $existingQueuePort) -ne [bool]$Bidirectional
     }
     if ($migrateOwnedQueue -and $portExists) {
-        throw 'The proposed new port already exists. Refusing to adopt it for an address update.'
+        # Switching relay modes back and forth leaves the earlier port behind (old
+        # ports are preserved). Reuse it only if it is exactly what this script
+        # would create and no other printer uses it.
+        Assert-PortRegistry
+        if (@(Get-Printer | Where-Object { $_.PortName -eq $portName }).Count) {
+            throw 'The proposed new port already exists and is used by another printer. Refusing to adopt it.'
+        }
+        $adoptPort = $true
+        $changeBidi = (Get-PortSnmpEnabled $portName) -ne [bool]$Bidirectional
     }
 } elseif ($portExists) {
     # The owned queue is gone but a matching numeric-IP RAW 9100 port remains
@@ -308,7 +316,7 @@ $plan = [pscustomobject]@{
     PreviousPortNumber = $(if ($migrateOwnedQueue) { $existingPortNumber } else { $null })
     PreviousDriver = $(if ($changeOwnedDriver) { $existingDriverName } else { $null })
     RenameFrom = $(if ($renameQueue) { $sourceQueueName } else { $null })
-    Action = $(if ($renameQueue) { "Rename only the owned queue '$sourceQueueName' to '$queueName' and update it" } elseif ($migrateOwnedQueue) { 'Create new port and update only the owned queue; preserve old port' } elseif ($changeOwnedDriver) { 'Update only the owned queue driver; retain existing private-IP port' } elseif ($adoptPort) { 'Adopt the matching existing port and create the owned queue on it' } elseif ($changeBidi) { "Update only the owned port's SNMP/bidirectional setting" } elseif ($queueExists) { 'Already owned and matching; no changes required' } else { 'Create a new port and a new queue' })
+    Action = $(if ($renameQueue) { "Rename only the owned queue '$sourceQueueName' to '$queueName' and update it" } elseif ($migrateOwnedQueue -and $adoptPort) { 'Move only the owned queue onto the matching unused port; preserve old port' } elseif ($migrateOwnedQueue) { 'Create new port and update only the owned queue; preserve old port' } elseif ($changeOwnedDriver) { 'Update only the owned queue driver; retain existing private-IP port' } elseif ($adoptPort) { 'Adopt the matching existing port and create the owned queue on it' } elseif ($changeBidi) { "Update only the owned port's SNMP/bidirectional setting" } elseif ($queueExists) { 'Already owned and matching; no changes required' } else { 'Create a new port and a new queue' })
     PrintValidation = 'Queue registration does not verify this print job or website support'
 }
 $plan | Format-List | Out-Host
@@ -352,7 +360,7 @@ if ($queueExists) {
     }
 }
 if ((-not $queueExists -and ($liveQueue.Count -or (Test-Path -LiteralPath $queueKey))) -or
-    (((-not $queueExists -and -not $adoptPort) -or $migrateOwnedQueue) -and ($livePort.Count -or (Test-Path -LiteralPath $portKey)))) {
+    (-not $adoptPort -and (-not $queueExists -or $migrateOwnedQueue) -and ($livePort.Count -or (Test-Path -LiteralPath $portKey)))) {
     throw 'Queue or port name became occupied. No existing objects will be changed.'
 }
 if (-not $PSCmdlet.ShouldProcess("$queueName using $driverName at RAW ${hostAddress}:$portNumber", $plan.Action)) {
@@ -378,7 +386,7 @@ try {
         })
         if ($registeredLiveDriver.Count -ne 1) { throw "Exact inbox $archLabel driver was not registered. No queue changed." }
     }
-    if ((-not $queueExists -and -not $adoptPort) -or $migrateOwnedQueue) {
+    if (-not $adoptPort -and (-not $queueExists -or $migrateOwnedQueue)) {
         if ($Bidirectional) {
             Add-PrinterPort -Name $portName -PrinterHostAddress $hostAddress -PortNumber $portNumber -SNMP 1 -SNMPCommunity 'public' -Confirm:$false -ErrorAction Stop
         } else {

@@ -21,6 +21,11 @@ $captureRawPort = 19100
 $captureSnmpPort = 1161
 $env:WSL_UTF8 = '1'
 
+# Tells SayScorePDF.exe's startup window what is happening (no-op without it).
+function Set-StartupStatus([string]$Text) {
+    if ($env:SAYSCORE_PROGRESS) { try { [IO.File]::WriteAllText($env:SAYSCORE_PROGRESS, $Text) } catch { } }
+}
+
 function Test-PrivateIPv4([string]$Value) {
     $parsed = $null
     if (-not [Net.IPAddress]::TryParse($Value, [ref]$parsed) -or
@@ -159,6 +164,7 @@ if ($Check) {
     return
 }
 
+Set-StartupStatus 'WSL 중계를 준비하는 중… (처음에는 1~2분 걸릴 수 있습니다)'
 Install-RelayDistribution
 Start-Relay $captureAddress
 
