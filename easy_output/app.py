@@ -400,6 +400,7 @@ class App:
             variable.trace_add("write", self.write_runtime_status)
         self.write_runtime_status()
         root.after(100, self.consume)
+        root.after(2000, self.prune_deleted_pdfs)
         if smoke:
             root.after(500, self.close)
         else:
@@ -1059,6 +1060,8 @@ class App:
                 self.status.set(event.get("detail", ""))
                 continue
             history = event.pop("_history", False)
+            if history and self.pdf_deleted(event):
+                continue  # the user deleted this PDF from the output folder
             self.jobs[job_id] = event
             created = event.get("created") or event.get("updated") or time.time()
             name = Path(event.get("output") or "").name if event.get("output") else Path(event.get("input") or "인쇄 작업").name
@@ -1087,6 +1090,21 @@ class App:
     def clear_notice(self):
         self.phase.set("")
         self.update_overview()
+
+    @staticmethod
+    def pdf_deleted(job) -> bool:
+        return job.get("state") == "completed" and bool(job.get("output")) and not Path(job["output"]).exists()
+
+    def prune_deleted_pdfs(self):
+        """Drop saved jobs whose PDF the user deleted from the output folder."""
+        for job_id in self.tree.get_children():
+            job = self.jobs.get(job_id)
+            if job and self.pdf_deleted(job):
+                if job_id in self.tree.selection():
+                    self.detail.set("")
+                self.tree.delete(job_id)
+                del self.jobs[job_id]
+        self.root.after(2000, self.prune_deleted_pdfs)
 
     def selection(self):
         ids = self.tree.selection()
