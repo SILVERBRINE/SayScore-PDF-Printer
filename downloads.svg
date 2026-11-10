@@ -1,10 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="640" height="240" viewBox="0 0 640 240">
-  <text x="48" y="24" font-family="-apple-system,Segoe UI,sans-serif" fill="#8b949e" font-size="15" font-weight="600">Installer downloads · 30</text>
+  <text x="48" y="24" font-family="-apple-system,Segoe UI,sans-serif" fill="#8b949e" font-size="15" font-weight="600">Installer downloads · 34</text>
   <line x1="48" y1="208" x2="624" y2="208" stroke="#8b949e" stroke-opacity="0.4"/>
-  <polygon points="48,208 48.0,180.0 78.3,146.4 108.6,180.0 138.9,180.0 169.3,180.0 199.6,180.0 229.9,180.0 260.2,180.0 290.5,180.0 320.8,180.0 351.2,180.0 381.5,180.0 411.8,174.4 442.1,157.6 472.4,129.6 502.7,79.2 533.1,79.2 563.4,73.6 593.7,56.8 624.0,40.0 624,208" fill="#2f81f7" fill-opacity="0.15"/>
-  <polyline points="48.0,180.0 78.3,146.4 108.6,180.0 138.9,180.0 169.3,180.0 199.6,180.0 229.9,180.0 260.2,180.0 290.5,180.0 320.8,180.0 351.2,180.0 381.5,180.0 411.8,174.4 442.1,157.6 472.4,129.6 502.7,79.2 533.1,79.2 563.4,73.6 593.7,56.8 624.0,40.0" fill="none" stroke="#2f81f7" stroke-width="2.5" stroke-linejoin="round"/>
-  <text x="40" y="44" font-family="-apple-system,Segoe UI,sans-serif" fill="#8b949e" font-size="11" text-anchor="end">30</text>
+  <polygon points="48,208 48.0,183.3 76.8,153.6 105.6,183.3 134.4,183.3 163.2,183.3 192.0,183.3 220.8,183.3 249.6,183.3 278.4,183.3 307.2,183.3 336.0,183.3 364.8,183.3 393.6,178.4 422.4,163.5 451.2,138.8 480.0,94.4 508.8,94.4 537.6,89.4 566.4,74.6 595.2,59.8 624.0,40.0 624,208" fill="#2f81f7" fill-opacity="0.15"/>
+  <polyline points="48.0,183.3 76.8,153.6 105.6,183.3 134.4,183.3 163.2,183.3 192.0,183.3 220.8,183.3 249.6,183.3 278.4,183.3 307.2,183.3 336.0,183.3 364.8,183.3 393.6,178.4 422.4,163.5 451.2,138.8 480.0,94.4 508.8,94.4 537.6,89.4 566.4,74.6 595.2,59.8 624.0,40.0" fill="none" stroke="#2f81f7" stroke-width="2.5" stroke-linejoin="round"/>
+  <text x="40" y="44" font-family="-apple-system,Segoe UI,sans-serif" fill="#8b949e" font-size="11" text-anchor="end">34</text>
   <text x="40" y="208" font-family="-apple-system,Segoe UI,sans-serif" fill="#8b949e" font-size="11" text-anchor="end">0</text>
   <text x="48" y="230" font-family="-apple-system,Segoe UI,sans-serif" fill="#8b949e" font-size="11">2026-10-21</text>
-  <text x="624" y="230" font-family="-apple-system,Segoe UI,sans-serif" fill="#8b949e" font-size="11" text-anchor="end">2026-11-09</text>
+  <text x="624" y="230" font-family="-apple-system,Segoe UI,sans-serif" fill="#8b949e" font-size="11" text-anchor="end">2026-11-10</text>
 </svg>
