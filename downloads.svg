@@ -1,10 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="640" height="240" viewBox="0 0 640 240">
-  <text x="48" y="24" font-family="-apple-system,Segoe UI,sans-serif" fill="#8b949e" font-size="15" font-weight="600">Installer downloads · 68</text>
+  <text x="48" y="24" font-family="-apple-system,Segoe UI,sans-serif" fill="#8b949e" font-size="15" font-weight="600">Installer downloads · 69</text>
   <line x1="48" y1="208" x2="624" y2="208" stroke="#8b949e" stroke-opacity="0.4"/>
-  <polygon points="48,208 48.0,195.6 67.2,180.8 86.4,195.6 105.6,195.6 124.8,195.6 144.0,195.6 163.2,195.6 182.4,195.6 201.6,195.6 220.8,195.6 240.0,195.6 259.2,195.6 278.4,193.2 297.6,185.8 316.8,173.4 336.0,151.2 355.2,151.2 374.4,148.7 393.6,141.3 412.8,133.9 432.0,124.0 451.2,121.5 470.4,109.2 489.6,84.5 508.8,84.5 528.0,84.5 547.2,72.1 566.4,52.4 585.6,52.4 604.8,40.0 624.0,40.0 624,208" fill="#2f81f7" fill-opacity="0.15"/>
-  <polyline points="48.0,195.6 67.2,180.8 86.4,195.6 105.6,195.6 124.8,195.6 144.0,195.6 163.2,195.6 182.4,195.6 201.6,195.6 220.8,195.6 240.0,195.6 259.2,195.6 278.4,193.2 297.6,185.8 316.8,173.4 336.0,151.2 355.2,151.2 374.4,148.7 393.6,141.3 412.8,133.9 432.0,124.0 451.2,121.5 470.4,109.2 489.6,84.5 508.8,84.5 528.0,84.5 547.2,72.1 566.4,52.4 585.6,52.4 604.8,40.0 624.0,40.0" fill="none" stroke="#2f81f7" stroke-width="2.5" stroke-linejoin="round"/>
-  <text x="40" y="44" font-family="-apple-system,Segoe UI,sans-serif" fill="#8b949e" font-size="11" text-anchor="end">68</text>
+  <polygon points="48,208 48.0,195.8 66.6,181.2 85.2,195.8 103.7,195.8 122.3,195.8 140.9,195.8 159.5,195.8 178.1,195.8 196.6,195.8 215.2,195.8 233.8,195.8 252.4,195.8 271.0,193.4 289.5,186.1 308.1,173.9 326.7,152.0 345.3,152.0 363.9,149.6 382.5,142.3 401.0,135.0 419.6,125.2 438.2,122.8 456.8,110.6 475.4,86.3 493.9,86.3 512.5,86.3 531.1,74.1 549.7,54.6 568.3,54.6 586.8,42.4 605.4,42.4 624.0,40.0 624,208" fill="#2f81f7" fill-opacity="0.15"/>
+  <polyline points="48.0,195.8 66.6,181.2 85.2,195.8 103.7,195.8 122.3,195.8 140.9,195.8 159.5,195.8 178.1,195.8 196.6,195.8 215.2,195.8 233.8,195.8 252.4,195.8 271.0,193.4 289.5,186.1 308.1,173.9 326.7,152.0 345.3,152.0 363.9,149.6 382.5,142.3 401.0,135.0 419.6,125.2 438.2,122.8 456.8,110.6 475.4,86.3 493.9,86.3 512.5,86.3 531.1,74.1 549.7,54.6 568.3,54.6 586.8,42.4 605.4,42.4 624.0,40.0" fill="none" stroke="#2f81f7" stroke-width="2.5" stroke-linejoin="round"/>
+  <text x="40" y="44" font-family="-apple-system,Segoe UI,sans-serif" fill="#8b949e" font-size="11" text-anchor="end">69</text>
   <text x="40" y="208" font-family="-apple-system,Segoe UI,sans-serif" fill="#8b949e" font-size="11" text-anchor="end">0</text>
   <text x="48" y="230" font-family="-apple-system,Segoe UI,sans-serif" fill="#8b949e" font-size="11">2026-10-21</text>
-  <text x="624" y="230" font-family="-apple-system,Segoe UI,sans-serif" fill="#8b949e" font-size="11" text-anchor="end">2026-11-20</text>
+  <text x="624" y="230" font-family="-apple-system,Segoe UI,sans-serif" fill="#8b949e" font-size="11" text-anchor="end">2026-11-21</text>
 </svg>
